@@ -4,7 +4,7 @@ import fs from "fs";
 import fetch from "node-fetch";
 import pdfParse from "pdf-parse";
 import dotenv from "dotenv";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import mongoose from "mongoose"; 
