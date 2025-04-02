@@ -1,0 +1,530 @@
+openapi: 3.0.0
+info:
+  title: Resume Analyzer API
+  description: API for resume analysis, user authentication, and interview preparation
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+tags:
+  - name: Authentication
+    description: User signup and login
+  - name: Resume
+    description: Resume analysis and feedback
+  - name: Interview
+    description: Mock interview and evaluation
+  - name: User
+    description: User account management
+  - name: Health
+    description: API health check
+paths:
+  /api/signup:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+              required: [username, email, password]
+      responses:
+        201:
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  token:
+                    type: string
+        400:
+          description: Bad request (missing fields or user exists)
+        500:
+          description: Internal server error
+
+  /api/login:
+    post:
+      tags: [Authentication]
+      summary: Login a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+              required: [email, password]
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  token:
+                    type: string
+                  email:
+                    type: string
+        400:
+          description: Invalid credentials
+        500:
+          description: Server error
+
+  /api/protected:
+    get:
+      tags: [Authentication]
+      summary: Test protected route
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Access granted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
+
+  /api/score:
+    post:
+      tags: [Resume]
+      summary: Store user's resume score
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                score:
+                  type: number
+              required: [score]
+      responses:
+        200:
+          description: Score stored successfully
+        400:
+          description: Bad request
+        401:
+          description: Unauthorized
+        500:
+          description: Internal server error
+
+  /api/analyze:
+    post:
+      tags: [Resume]
+      summary: Analyze a resume PDF
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: Resume analyzed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      overallScore:
+                        type: number
+                      content:
+                        type: object
+                      format:
+                        type: object
+                      sections:
+                        type: object
+                      skills:
+                        type: object
+                      style:
+                        type: object
+        400:
+          description: No file uploaded
+        401:
+          description: Unauthorized
+        500:
+          description: Server error
+
+  /api/job-suggestions:
+    post:
+      tags: [Resume]
+      summary: Get job suggestions based on resume
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resumeText:
+                  type: string
+              required: [resumeText]
+      responses:
+        200:
+          description: Job suggestions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  suggestions:
+                    type: array
+                    items:
+                      type: string
+        400:
+          description: No resume text provided
+        500:
+          description: Server error
+
+  /api/mock-interview:
+    post:
+      tags: [Interview]
+      summary: Generate mock interview questions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resumeText:
+                  type: string
+                jobRole:
+                  type: string
+                difficulty:
+                  type: string
+                  enum: [beginner, intermediate, advanced]
+              required: [resumeText, jobRole, difficulty]
+      responses:
+        200:
+          description: Questions generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  questions:
+                    type: array
+                    items:
+                      type: string
+                  expectedAnswers:
+                    type: array
+                    items:
+                      type: string
+        400:
+          description: Missing fields
+        500:
+          description: Server error
+
+  /api/evaluate-answers:
+    post:
+      tags: [Interview]
+      summary: Evaluate interview answers
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                questions:
+                  type: array
+                  items:
+                    type: string
+                answers:
+                  type: array
+                  items:
+                    type: string
+                expectedAnswers:
+                  type: array
+                  items:
+                    type: string
+                jobRole:
+                  type: string
+                skippedCount:
+                  type: number
+              required: [email, questions, answers, expectedAnswers, jobRole]
+      responses:
+        200:
+          description: Answers evaluated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  evaluation:
+                    type: array
+                    items:
+                      type: string
+                  correctCount:
+                    type: number
+                  wrongCount:
+                    type: number
+        400:
+          description: Missing fields
+        404:
+          description: User not found
+        500:
+          description: Server error
+
+  /api/dashboard:
+    get:
+      tags: [User]
+      summary: Get dashboard data
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Dashboard data retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        jobRole:
+                          type: string
+                        correctAnswers:
+                          type: number
+                        resumeAnalysisScore:
+                          type: number
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+
+  /api/account:
+    get:
+      tags: [User]
+      summary: Get user account info
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Account info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                      email:
+                        type: string
+                      phoneNumber:
+                        type: string
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+    put:
+      tags: [User]
+      summary: Update user account info
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phoneNumber:
+                  type: string
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        200:
+          description: Account updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+
+  /api/basic-info:
+    get:
+      tags: [User]
+      summary: Get user basic info
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Basic info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                      gender:
+                        type: string
+                      location:
+                        type: string
+                      birthday:
+                        type: string
+                      summary:
+                        type: string
+                      githubLink:
+                        type: string
+                      linkedinLink:
+                        type: string
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+    put:
+      tags: [User]
+      summary: Update user basic info
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gender:
+                  type: string
+                location:
+                  type: string
+                birthday:
+                  type: string
+                summary:
+                  type: string
+                githubLink:
+                  type: string
+                linkedinLink:
+                  type: string
+      responses:
+        200:
+          description: Basic info updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Check API health
+      responses:
+        200:
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  dbStatus:
+                    type: string
+
+securitySchemes:
+  bearerAuth:
+    type: http
+    scheme: bearer
+    bearerFormat: JWT

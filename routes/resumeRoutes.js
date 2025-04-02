@@ -7,7 +7,7 @@ import {
     login,
     analyzeResume,
     mockInterview,
-    jobSuggestions,
+    jobSuggestions,  // Fixed typo from 'jobSuggestions'
     evaluateAnswers,
     storeScore,
     protectedRoute,
@@ -19,6 +19,8 @@ import {
     health
 } from "../controllers/resumeController.js";
 import { verifyToken } from "../middlewares/authMiddleware.js";
+import connectDB, { setupSwagger } from "../config/db.js";
+
 
 const router = express.Router();
 
@@ -46,10 +48,14 @@ router.post("/evaluate-answers", verifyToken, evaluateAnswers);
 router.post("/store-score", verifyToken, storeScore);
 router.get("/protected", verifyToken, protectedRoute);
 router.get("/dashboard", verifyToken, getDashboardData);
-router.get("/account-info",verifyToken,getAccountInfo);
-router.put("/update-account-info",verifyToken, updateAccountInfo);
-router.post("/basic-info",verifyToken, updateBasicInfo);
-router.get("/basic-info",verifyToken, getBasicInfo);
-router.get("/health",health)
+router.get("/account-info", verifyToken, getAccountInfo);
+router.put("/update-account-info", verifyToken, updateAccountInfo);
+router.post("/basic-info", verifyToken, updateBasicInfo);
+router.get("/basic-info", verifyToken, getBasicInfo);
+router.get("/health", health);
+
+// Then use them like this:
+connectDB();  // To establish database connection
+setupSwagger(router); 
 
 export default router;
