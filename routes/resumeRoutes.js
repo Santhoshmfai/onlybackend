@@ -5,9 +5,10 @@ import path from "path";
 import {
     signup,
     login,
+    getUserDetails,
     analyzeResume,
     mockInterview,
-    jobSuggestions,  // Fixed typo from 'jobSuggestions'
+    jobSuggestions,
     evaluateAnswers,
     storeScore,
     protectedRoute,
@@ -19,8 +20,6 @@ import {
     health
 } from "../controllers/resumeController.js";
 import { verifyToken } from "../middlewares/authMiddleware.js";
-import connectDB, { setupSwagger } from "../config/db.js";
-
 
 const router = express.Router();
 
@@ -40,7 +39,8 @@ const upload = multer({ storage });
 
 // Routes
 router.post("/signup", signup);  
-router.post("/login", login);   
+router.post("/login", login);  
+router.get('/user-details', verifyToken, getUserDetails); 
 router.post("/analyze", upload.single("resume"), analyzeResume);
 router.post("/mockinterview", verifyToken, mockInterview);
 router.post("/job-suggestions", verifyToken, jobSuggestions);
@@ -48,14 +48,10 @@ router.post("/evaluate-answers", verifyToken, evaluateAnswers);
 router.post("/store-score", verifyToken, storeScore);
 router.get("/protected", verifyToken, protectedRoute);
 router.get("/dashboard", verifyToken, getDashboardData);
-router.get("/account-info", verifyToken, getAccountInfo);
-router.put("/update-account-info", verifyToken, updateAccountInfo);
-router.post("/basic-info", verifyToken, updateBasicInfo);
-router.get("/basic-info", verifyToken, getBasicInfo);
-router.get("/health", health);
-
-// Then use them like this:
-connectDB();  // To establish database connection
-setupSwagger(router); 
+router.get("/account-info",verifyToken,getAccountInfo);
+router.put("/update-account-info",verifyToken, updateAccountInfo);
+router.post("/basic-info",verifyToken, updateBasicInfo);
+router.get("/basic-info",verifyToken, getBasicInfo);
+router.get("/health",health)
 
 export default router;

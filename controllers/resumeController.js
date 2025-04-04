@@ -4,7 +4,7 @@ import fs from "fs";
 import fetch from "node-fetch";
 import pdfParse from "pdf-parse";
 import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import mongoose from "mongoose"; 
@@ -49,40 +49,31 @@ export const signup = async (req, res) => {
     }
 };
 
+
+
 export const login = async (req, res) => {
     const { email, password } = req.body;
-  
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-  
+
     try {
-      const user = await Resume.findOne({ email });
-  
-      if (!user) {
-        return res.status(401).json({ error: "Email not found" });
-      }
-  
-      const isPasswordMatch = await bcrypt.compare(password, user.password);
-      if (!isPasswordMatch) {
-        return res.status(401).json({ error: "Wrong password" });
-      }
-  
-      const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, {
-        expiresIn: "1h",
-      });
-  
-      res.status(200).json({
-        message: "Login successful",
-        token,
-        email: user.email,
-        name: user.username, // Include name for Redux if needed
-      });
+        const user = await Resume.findOne({ email });
+
+        if (!user) {
+            return res.status(400).json({ error: "Email not found" });
+        }
+
+        const isPasswordMatch = await bcrypt.compare(password, user.password);
+        if (!isPasswordMatch) {
+            return res.status(400).json({ error: "Wrong password" });
+        }
+
+        // Generate JWT token
+        const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: "1h" });
+
+        res.status(200).json({ message: "Login successful", token, email: user.email });
     } catch (error) {
-      res.status(500).json({ error: "Server error", details: error.message });
+        res.status(500).json({ error: "Server error", details: error.message });
     }
-  };
-  
+};
 
 // Protect this route with JWT
 export const protectedRoute = (req, res) => {
@@ -117,6 +108,28 @@ export const storeScore = async (req, res) => {
     } catch (error) {
         console.error("Error storing score:", error);
         res.status(500).json({ message: "Error storing score.", details: error.message });
+    }
+};
+
+export const getUserDetails = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) return res.status(401).json({ error: "Unauthorized: No token provided." });
+
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await Resume.findById(decoded.id).select('username'); // Changed from User to Resume
+        
+        if (!user) return res.status(404).json({ message: "User not found." });
+
+        res.json({
+            success: true,
+            data: {
+                username: user.username
+            }
+        });
+    } catch (error) {
+        console.error("Error:", error);
+        res.status(500).json({ error: "Server error", details: error.message });
     }
 };
 
