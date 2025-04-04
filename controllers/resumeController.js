@@ -49,31 +49,40 @@ export const signup = async (req, res) => {
     }
 };
 
-
-
 export const login = async (req, res) => {
     const { email, password } = req.body;
-
-    try {
-        const user = await Resume.findOne({ email });
-
-        if (!user) {
-            return res.status(400).json({ error: "Email not found" });
-        }
-
-        const isPasswordMatch = await bcrypt.compare(password, user.password);
-        if (!isPasswordMatch) {
-            return res.status(400).json({ error: "Wrong password" });
-        }
-
-        // Generate JWT token
-        const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: "1h" });
-
-        res.status(200).json({ message: "Login successful", token, email: user.email });
-    } catch (error) {
-        res.status(500).json({ error: "Server error", details: error.message });
+  
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
-};
+  
+    try {
+      const user = await Resume.findOne({ email });
+  
+      if (!user) {
+        return res.status(401).json({ error: "Email not found" });
+      }
+  
+      const isPasswordMatch = await bcrypt.compare(password, user.password);
+      if (!isPasswordMatch) {
+        return res.status(401).json({ error: "Wrong password" });
+      }
+  
+      const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, {
+        expiresIn: "1h",
+      });
+  
+      res.status(200).json({
+        message: "Login successful",
+        token,
+        email: user.email,
+        name: user.username, // Include name for Redux if needed
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Server error", details: error.message });
+    }
+  };
+  
 
 // Protect this route with JWT
 export const protectedRoute = (req, res) => {
