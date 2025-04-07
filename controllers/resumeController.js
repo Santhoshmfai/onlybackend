@@ -158,58 +158,61 @@ export const analyzeResume = async (req, res) => {
             body: JSON.stringify({
                 model: "gemma2-9b-it",
                 messages: [
-                    { 
-                        role: "system", 
-                        content: `You analyze resumes and provide structured feedback. 
-                        **Strictly** follow this response format without adding extra text.
-                        
-                        Return the output **exactly** in this structure:
-                        
-                        Resume Analysis Score: [Overall Score]%
-                    
-                        Content:
-                         Issues:
-                         
-                         Suggested Fixes:
-                         
-                        Score: [Score]/20
-                    
-                        Format:
-                         Issues:
+                    { role: "system", content: "You analyze resumes and provide structured feedback. Each category (Content, Format, Sections, Skills, Style) should be scored out of 20, with suggestions for improvement." },
+                    { role: "user", content: `You are a resume analysis assistant. Analyze the given resume and respond strictly in the format below. Do not include any greetings, summaries, or extra commentary. Your response must follow this exact structure:
 
-                         Suggested Fixes:
-                          
-                        Score: [Score]/20
-                    
-                        Sections:
-                         Issues:
-                          
-                        Suggested Fixes:
-                          
-                        Score: [Score]/20
-                    
-                        Skills:
-                         Issues:
-                          
-                        Suggested Fixes:
-                         
-                        Score: [Score]/20
-                    
-                        Style:
-                         Issues:
-                         
-                        Suggested Fixes:
-                          
-                        Score: [Score]/20
-                    
-                        Any response that deviates from this format will be considered incorrect.`
-                    },
-                    { 
-                        role: "user", 
-                        content: `Analyze this resume and provide feedback in the exact format above:
-                        
-                        Resume Text: ${resumeText}`
-                    }
+Resume Analysis Score (as a percentage):
+
+Category-wise analysis:
+
+Content:
+Issues:
+
+[List the issues concisely]
+Suggested Fixes:
+
+[List clear suggestions]
+Score: [x]/20
+
+Format:
+Issues:
+
+[List the issues]
+Suggested Fixes:
+
+[List the fixes]
+Score: [x]/20
+
+Sections:
+Issues:
+
+[List the issues]
+Suggested Fixes:
+
+[List the fixes]
+Score: [x]/20
+
+Skills:
+Issues:
+
+[List the issues]
+Suggested Fixes:
+
+[List the fixes]
+Score: [x]/20
+
+Style:
+Issues:
+
+[List the issues]
+Suggested Fixes:
+
+[List the fixes]
+Score: [x]/20
+
+Only use bullet points. Do not skip any category. Do not use paragraph explanations. Maintain clarity, relevance, and a professional tone.
+
+Resume Text: ${resumeText}` }
                     
                 ]
             })
@@ -290,8 +293,8 @@ export const jobSuggestions = async (req, res) => {
                 model: "gemma2-9b-it",
                 messages: [
                     { role: "system", content: "You analyze resumes and suggest the best job roles." },
-                    { role: "user", content: `Based on the following resume text, suggest **only the job titles** (one per line) with no extra text  :
-                        ${resumeText}` }
+                    { role: "user", content: `You are a resume analysis assistant. From the given resume text, extract and return only the most suitable job role title. Do not include any additional words, context, descriptions, or sentences—just the job title that best fits the resume.
+Resume Text: ${resumeText}` }
                 ]
             })
         });
@@ -328,26 +331,18 @@ export const mockInterview = async (req, res) => {
             body: JSON.stringify({
                 model: "gemma2-9b-it",
                 messages: [
-                    { 
-                        role: "system", 
-                        content: `You are an AI that generates mock interview questions and their correct answers for job candidates. 
-                        **STRICTLY follow this output format without any extra words:**  
-                        Q1: [Question 1]  
-                        A1: [Answer 1]  
-                        Q2: [Question 2]  
-                        A2: [Answer 2]  
-                        ...  
-                        Q15: [Question 15]  
-                        A15: [Answer 15]`
-                    },
-                    { 
-                        role: "user", 
-                        content: `Generate exactly **15** mock interview questions for a **${jobRole}** at **${difficulty} difficulty level** based on the resume below. 
-                        **Do not include any additional explanations or comments. Strictly follow the requested format.**  
+                    { role: "system", content: "You are a resume analysis assistant that generates mock interview questions and their correct answers based on the provided job role and resume. Your response must follow this exact format and structure—no extra commentary or explanation." },
+                    { role: "user", content: `Generate 15 interview questions for a ${jobRole} based on this resume. For each question, provide the correct answer. Ensure the response is strictly formatted as follows:
 
-                        Resume Text:  
-                        ${resumeText}`
-                    }
+Q1: [Question 1]
+A1: [Answer 1]
+Q2: [Question 2]
+A2: [Answer 2]
+...
+Q15: [Question 15]
+A15: [Answer 15]
+
+Resume Text: ${resumeText}` }
                 ]
             })
         });
@@ -430,10 +425,23 @@ export const evaluateAnswers = async (req, res) => {
             body: JSON.stringify({
                 model: "gemma2-9b-it",
                 messages: [
-                    { role: "system", content: "You evaluate interview answers. Clearly label answers as 'Correct' or 'Wrong' and explain why." },
-                    { role: "user", content: `Evaluate these answers. Clearly mention 'Correct' or 'Wrong' for each:
-                        ${questions.map((q, i) => `Q: ${q}\nA: ${answers[i]}\nExpected: ${expectedAnswers[i]}`).join("\n\n")}
-                    ` }
+                    {
+                        role: "system",
+                        content: `You evaluate interview answers. Clearly label answers as 'Correct' or 'Wrong' and explain why. Follow this format strictly:
+                    
+                    Q1: [Question 1]
+                    A1: [Candidate's Answer 1]
+                    Expected: [Expected Correct Answer 1]
+                    Evaluation: Correct/Wrong - [Short Explanation]
+                    
+                    ...up to Q15`
+                      },
+                      {
+                        role: "user",
+                        content: `Evaluate these answers. Clearly mention 'Correct' or 'Wrong' for each:\n\n${questions.map((q, i) => 
+                          `Q${i + 1}: ${q}\nA${i + 1}: ${answers[i]}\nExpected: ${expectedAnswers[i]}\n`
+                        ).join("\n")}`
+                      }
                 ]
             })
         });
