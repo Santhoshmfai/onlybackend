@@ -719,7 +719,7 @@ export const getBasicInfo = async (req, res) => {
 
         // Create response object with default values for missing fields
         const userResponse = {
-            
+            username: user.username || "",
             email: user.email || "",
             gender: user.gender || "",
             location: user.location || "",
