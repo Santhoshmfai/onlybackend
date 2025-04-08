@@ -709,7 +709,7 @@ export const getBasicInfo = async (req, res) => {
         }
 
         const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await Resume.findById(decoded.id).select("username gender location birthday summary githubLink linkedinLink");
+        const user = await Resume.findById(decoded.id).select("username email gender location birthday summary githubLink linkedinLink");
 
         if (!user) {
             return res.status(404).json({ error: "User not found." });
