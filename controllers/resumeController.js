@@ -292,25 +292,59 @@ export const jobSuggestions = async (req, res) => {
             body: JSON.stringify({
                 model: "gemma2-9b-it",
                 messages: [
-                    { role: "system", content: "You analyze resumes and suggest the best job roles." },
-                    { role: "user", content: `You are a resume analysis assistant. From the given resume text, extract and return only the most suitable job role title. Do not include any additional words, context, descriptions, or sentences—just the job title that best fits the resume.
-Resume Text: ${resumeText}` }
-                ]
+                    { 
+                        role: "system", 
+                        content: "You analyze resumes and suggest the best job roles. Return ONLY job titles, one per line, with no additional text or formatting." 
+                    },
+                    { 
+                        role: "user", 
+                        content: `Based on the following resume text, suggest exactly one job titles (one per line, no numbers or bullet points):
+                        ${resumeText}`
+                    }
+                ],
+                temperature: 0.7,
+                max_tokens: 100
             })
         });
 
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Groq API Error:", errorData);
+            return res.status(500).json({ error: "Groq API error", details: errorData });
+        }
+
         const data = await response.json();
-        const jobRoles = data.choices?.[0]?.message?.content.split("\n").map(role => role.trim()).filter(role => role !== "");
-        console.log(jobRoles)
-        if (!jobRoles) {
+        const content = data.choices?.[0]?.message?.content;
+
+        if (!content) {
             return res.status(500).json({ error: "Invalid Groq API response format" });
         }
 
-        res.json({ success: true, suggestions: jobRoles }); // Ensure the response matches the client expectation
+        // More robust parsing of job titles
+        const jobRoles = content.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .map(line => line.replace(/^\d+\.\s*/, '')) // Remove numbering if present
+            .map(line => line.replace(/^-\s*/, '')) // Remove bullets if present
+            .filter(line => !line.toLowerCase().includes('based on'))
+            .filter(line => line.length > 3); // Filter out very short lines
+
+        if (jobRoles.length === 0) {
+            return res.status(500).json({ error: "No valid job titles found in response" });
+        }
+
+        res.json({ 
+            success: true, 
+            suggestions: jobRoles.slice(0, 5) // Return max 5 suggestions
+        });
 
     } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Server error", details: error.message });
+        console.error("Error in jobSuggestions:", error);
+        res.status(500).json({ 
+            error: "Server error", 
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 };
 
