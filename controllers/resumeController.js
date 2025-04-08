@@ -709,14 +709,27 @@ export const getBasicInfo = async (req, res) => {
         }
 
         const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await Resume.findById(decoded.id).select("+email username gender location birthday summary githubLink linkedinLink");
-
+        const user = await Resume.findById(decoded.id).select(
+            "username email gender location birthday summary githubLink linkedinLink"
+        );
 
         if (!user) {
             return res.status(404).json({ error: "User not found." });
         }
 
-        res.status(200).json({ user });
+        // Create response object with default values for missing fields
+        const userResponse = {
+            username: user.username || "",
+            email: user.email || "",
+            gender: user.gender || "",
+            location: user.location || "",
+            birthday: user.birthday || "",
+            summary: user.summary || "",
+            githubLink: user.githubLink || "",
+            linkedinLink: user.linkedinLink || ""
+        };
+
+        res.status(200).json({ user: userResponse });
     } catch (error) {
         console.error("Error fetching basic info:", error);
         res.status(500).json({ error: "Internal server error", details: error.message });
