@@ -20,9 +20,20 @@ import {
     health
 } from "../controllers/resumeController.js";
 import { verifyToken } from "../middlewares/authMiddleware.js";
-
+import cors from "cors";
 const router = express.Router();
-
+router
+.use(
+    cors({
+      origin: "http://localhost:3000", // Your React app
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      credentials: true,
+    })
+  );
+  
+  // Explicitly handle OPTIONS preflight
+  router.options("*", cors());
 // Ensure 'uploads' directory exists
 const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'profile-pictures');
 if (!fs.existsSync(uploadDir)) {
