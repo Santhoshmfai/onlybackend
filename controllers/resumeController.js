@@ -644,6 +644,7 @@ export const updateAccountInfo = async (req, res) => {
 };
 
 // Store or update basic info
+// Update basic info
 export const updateBasicInfo = async (req, res) => {
     try {
         const token = req.headers.authorization?.split(" ")[1];
@@ -659,19 +660,33 @@ export const updateBasicInfo = async (req, res) => {
         }
 
         // Extract fields from the request body
-        const { gender, location, birthday, summary, githubLink, linkedinLink } = req.body;
+        const { gender, location, birthday, summary, githubLink, linkedinLink, profilePicture } = req.body;
 
         // Update fields if provided
-        if (gender) user.gender = gender;
-        if (location) user.location = location;
-        if (birthday) user.birthday = birthday;
-        if (summary) user.summary = summary;
-        if (githubLink) user.githubLink = githubLink;
-        if (linkedinLink) user.linkedinLink = linkedinLink;
+        if (gender !== undefined) user.gender = gender;
+        if (location !== undefined) user.location = location;
+        if (birthday !== undefined) user.birthday = birthday;
+        if (summary !== undefined) user.summary = summary;
+        if (githubLink !== undefined) user.githubLink = githubLink;
+        if (linkedinLink !== undefined) user.linkedinLink = linkedinLink;
+        if (profilePicture !== undefined) user.profilePicture = profilePicture;
 
         await user.save();
 
-        res.status(200).json({ message: "Basic info updated successfully!", user });
+        // Return updated user data without sensitive information
+        const userResponse = {
+            username: user.username,
+            email: user.email,
+            gender: user.gender,
+            location: user.location,
+            birthday: user.birthday,
+            summary: user.summary,
+            githubLink: user.githubLink,
+            linkedinLink: user.linkedinLink,
+            profilePicture: user.profilePicture
+        };
+
+        res.status(200).json({ message: "Basic info updated successfully!", user: userResponse });
     } catch (error) {
         console.error("Error updating basic info:", error);
         res.status(500).json({ error: "Internal server error", details: error.message });
@@ -687,31 +702,32 @@ export const getBasicInfo = async (req, res) => {
         }
 
         const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await Resume.findById(decoded.id).select("username email gender location birthday summary githubLink linkedinLink -_id");
+        const user = await Resume.findById(decoded.id).select("-password -resumeAnalysis -mockInterviewData -_id -__v");
 
         if (!user) {
             return res.status(404).json({ error: "User not found." });
         }
 
-        // Create response object with default values for missing fields
+        // Format the birthday to ISO string if it exists
         const userResponse = {
             username: user.username || "",
             email: user.email || "",
+            phoneNumber: user.phoneNumber || "",
             gender: user.gender || "",
             location: user.location || "",
-            birthday: user.birthday || "",
+            birthday: user.birthday ? user.birthday.toISOString().split('T')[0] : "",
             summary: user.summary || "",
             githubLink: user.githubLink || "",
-            linkedinLink: user.linkedinLink || ""
+            linkedinLink: user.linkedinLink || "",
+            profilePicture: user.profilePicture || ""
         };
-        console.log(userResponse)
+
         res.status(200).json({ user: userResponse });
     } catch (error) {
         console.error("Error fetching basic info:", error);
         res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
-
 export const health = async (req, res) => {
     res.json({
       message: "API is running",
