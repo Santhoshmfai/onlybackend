@@ -35,11 +35,11 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+      cb(null, uniqueSuffix + path.extname(file.originalname));
     }
   });
-
-const upload = multer({ storage:storage });
+  
+  const upload = multer({ storage: storage });
 
 // Routes
 router.post("/signup", signup);  
@@ -53,7 +53,7 @@ router.get("/protected", verifyToken, protectedRoute);
 router.get("/dashboard", verifyToken, getDashboardData);
 router.get("/account-info",verifyToken,getAccountInfo);
 router.put("/update-account-info",verifyToken, updateAccountInfo);
-router.post("/basic-info",verifyToken, updateBasicInfo);
+router.post("/basic-info",verifyToken, upload.single('profilePicture'), updateBasicInfo);
 router.get("/basic-info",verifyToken, getBasicInfo);
 router.get("/health",health)
 
