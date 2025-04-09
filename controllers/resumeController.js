@@ -751,7 +751,7 @@ export const getBasicInfo = async (req, res) => {
         res.status(200).json({ user: userResponse });
     } catch (error) {
         console.error("Error fetching basic info:", error);
-        res.status(500).json({ error: "Internal server error", details: error.message });
+        res.status(500).json({ error: "Internal server error ", details: error.message });
     }
 };
 export const health = async (req, res) => {
