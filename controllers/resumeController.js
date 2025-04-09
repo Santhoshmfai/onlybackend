@@ -726,7 +726,7 @@ export const getBasicInfo = async (req, res) => {
             githubLink: user.githubLink || "",
             linkedinLink: user.linkedinLink || ""
         };
-
+        console.log(userResponse)
         res.status(200).json({ user: userResponse });
     } catch (error) {
         console.error("Error fetching basic info:", error);
