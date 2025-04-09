@@ -645,39 +645,46 @@ export const updateAccountInfo = async (req, res) => {
 
 export const uploadProfilePicture = async (req, res) => {
     try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-  
-      const user = await Resume.findById(req.user.id);
-      if (!user) {
-        // Delete the uploaded file if user not found
-        fs.unlinkSync(path.join(uploadDir, req.file.filename));
-        return res.status(404).json({ error: 'User not found' });
-      }
-  
-      // Delete old profile picture if exists
-      if (user.profilePicture) {
-        const oldImagePath = path.join(process.cwd(), 'public', user.profilePicture);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
         }
-      }
-  
-      // Save new profile picture path (relative to public folder)
-      user.profilePicture = `/uploads/profile-pictures/${req.file.filename}`;
-      await user.save();
-  
-      res.json({
-        message: 'Profile picture uploaded successfully',
-        profilePicture: `${req.protocol}://${req.get('host')}${user.profilePicture}`
-      });
-    } catch (error) {
-      console.error('Error uploading profile picture:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  };
 
+        // Make sure you're importing your model correctly
+        const User = require('../models/resumeModel'); // or whatever your model path is
+        
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            // Delete the uploaded file if user not found
+            fs.unlinkSync(path.join(uploadDir, req.file.filename));
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Delete old profile picture if exists
+        if (user.profilePicture) {
+            const oldImagePath = path.join(uploadDir, path.basename(user.profilePicture));
+            if (fs.existsSync(oldImagePath)) {
+                fs.unlinkSync(oldImagePath);
+            }
+        }
+
+        // Save new profile picture path (relative to public folder)
+        const relativePath = `/uploads/profile-pictures/${req.file.filename}`;
+        user.profilePicture = relativePath;
+        await user.save();
+
+        res.json({
+            message: 'Profile picture uploaded successfully',
+            profilePicture: `${req.protocol}://${req.get('host')}${relativePath}`
+        });
+    } catch (error) {
+        console.error('Error uploading profile picture:', error);
+        // Delete the uploaded file if error occurs
+        if (req.file) {
+            fs.unlinkSync(path.join(uploadDir, req.file.filename));
+        }
+        res.status(500).json({ error: 'Server error' });
+    }
+};
 // For basic info updates
 export const updateBasicInfo = async (req, res) => {
     try {

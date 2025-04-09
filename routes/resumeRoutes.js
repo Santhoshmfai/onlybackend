@@ -32,7 +32,7 @@ if (!fs.existsSync(uploadDir)) {
 // Configure Multer storage for profile pictures
 const profilePictureStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, uploadsDir);
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
