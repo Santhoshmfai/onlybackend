@@ -643,15 +643,10 @@ export const updateAccountInfo = async (req, res) => {
     }
 };
 
-// Store or update basic info
-// Update basic info
-export const updateBasicInfo = async (req, res) => {
+// For profile picture upload
+export const uploadProfilePicture = async (req, res) => {
     try {
         const token = req.headers.authorization?.split(" ")[1];
-        if (!token) {
-            return res.status(401).json({ error: "Unauthorized: No token provided." });
-        }
-
         const decoded = jwt.verify(token, JWT_SECRET);
         const user = await Resume.findById(decoded.id);
 
@@ -659,15 +654,44 @@ export const updateBasicInfo = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
-        // Handle file upload if present
         if (req.file) {
+            // Delete old profile picture if exists
+            if (user.profilePicture) {
+                const oldImagePath = path.join(__dirname, '..', user.profilePicture);
+                if (fs.existsSync(oldImagePath)) {
+                    fs.unlinkSync(oldImagePath);
+                }
+            }
+            
             user.profilePicture = `/uploads/profile-pictures/${req.file.filename}`;
+            await user.save();
+            
+            return res.status(200).json({ 
+                message: "Profile picture updated successfully!",
+                profilePicture: user.profilePicture
+            });
         }
 
-        // Extract other fields from the request body
+        return res.status(400).json({ error: "No file uploaded." });
+    } catch (error) {
+        console.error("Error uploading profile picture:", error);
+        res.status(500).json({ error: "Internal server error", details: error.message });
+    }
+};
+
+// For basic info updates
+export const updateBasicInfo = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await Resume.findById(decoded.id);
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
         const { gender, location, birthday, summary, githubLink, linkedinLink } = req.body;
 
-        // Update fields if provided
         if (gender !== undefined) user.gender = gender;
         if (location !== undefined) user.location = location;
         if (birthday !== undefined) user.birthday = birthday;
@@ -677,7 +701,6 @@ export const updateBasicInfo = async (req, res) => {
 
         await user.save();
 
-        // Return updated user data
         const userResponse = {
             username: user.username,
             email: user.email,
@@ -696,7 +719,6 @@ export const updateBasicInfo = async (req, res) => {
         res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
-
 // Get basic info
 export const getBasicInfo = async (req, res) => {
     try {
