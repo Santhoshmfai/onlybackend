@@ -659,8 +659,13 @@ export const updateBasicInfo = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
-        // Extract fields from the request body
-        const { gender, location, birthday, summary, githubLink, linkedinLink, profilePicture } = req.body;
+        // Handle file upload if present
+        if (req.file) {
+            user.profilePicture = `/uploads/profile-pictures/${req.file.filename}`;
+        }
+
+        // Extract other fields from the request body
+        const { gender, location, birthday, summary, githubLink, linkedinLink } = req.body;
 
         // Update fields if provided
         if (gender !== undefined) user.gender = gender;
@@ -669,11 +674,10 @@ export const updateBasicInfo = async (req, res) => {
         if (summary !== undefined) user.summary = summary;
         if (githubLink !== undefined) user.githubLink = githubLink;
         if (linkedinLink !== undefined) user.linkedinLink = linkedinLink;
-        if (profilePicture !== undefined) user.profilePicture = profilePicture;
 
         await user.save();
 
-        // Return updated user data without sensitive information
+        // Return updated user data
         const userResponse = {
             username: user.username,
             email: user.email,

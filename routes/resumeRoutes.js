@@ -30,9 +30,14 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Configure Multer storage
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadsDir),
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
+    destination: (req, file, cb) => {
+      cb(null, 'uploads/profile-pictures/');
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  });
 
 const upload = multer({ storage });
 
