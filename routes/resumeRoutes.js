@@ -24,9 +24,9 @@ import { verifyToken } from "../middlewares/authMiddleware.js";
 const router = express.Router();
 
 // Ensure 'uploads' directory exists
-const uploadsDir = path.resolve("uploads/profile-pictures");
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'profile-pictures');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
 
 // Configure Multer storage for profile pictures

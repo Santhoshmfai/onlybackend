@@ -643,41 +643,40 @@ export const updateAccountInfo = async (req, res) => {
     }
 };
 
-// For profile picture upload
 export const uploadProfilePicture = async (req, res) => {
     try {
-        const token = req.headers.authorization?.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await Resume.findById(decoded.id);
-
-        if (!user) {
-            return res.status(404).json({ error: "User not found." });
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+  
+      const user = await Resume.findById(req.user.id);
+      if (!user) {
+        // Delete the uploaded file if user not found
+        fs.unlinkSync(path.join(uploadDir, req.file.filename));
+        return res.status(404).json({ error: 'User not found' });
+      }
+  
+      // Delete old profile picture if exists
+      if (user.profilePicture) {
+        const oldImagePath = path.join(process.cwd(), 'public', user.profilePicture);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
         }
-
-        if (req.file) {
-            // Delete old profile picture if exists
-            if (user.profilePicture) {
-                const oldImagePath = path.join(__dirname, '..', user.profilePicture);
-                if (fs.existsSync(oldImagePath)) {
-                    fs.unlinkSync(oldImagePath);
-                }
-            }
-            
-            user.profilePicture = `/uploads/profile-pictures/${req.file.filename}`;
-            await user.save();
-            
-            return res.status(200).json({ 
-                message: "Profile picture updated successfully!",
-                profilePicture: user.profilePicture
-            });
-        }
-
-        return res.status(400).json({ error: "No file uploaded." });
+      }
+  
+      // Save new profile picture path (relative to public folder)
+      user.profilePicture = `/uploads/profile-pictures/${req.file.filename}`;
+      await user.save();
+  
+      res.json({
+        message: 'Profile picture uploaded successfully',
+        profilePicture: `${req.protocol}://${req.get('host')}${user.profilePicture}`
+      });
     } catch (error) {
-        console.error("Error uploading profile picture:", error);
-        res.status(500).json({ error: "Internal server error", details: error.message });
+      console.error('Error uploading profile picture:', error);
+      res.status(500).json({ error: 'Server error' });
     }
-};
+  };
 
 // For basic info updates
 export const updateBasicInfo = async (req, res) => {
