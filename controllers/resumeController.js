@@ -111,28 +111,6 @@ export const storeScore = async (req, res) => {
     }
 };
 
-export const getUserDetails = async (req, res) => {
-    try {
-        const token = req.headers.authorization?.split(" ")[1];
-        if (!token) return res.status(401).json({ error: "Unauthorized: No token provided." });
-
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await Resume.findById(decoded.id).select('username'); // Changed from User to Resume
-        
-        if (!user) return res.status(404).json({ message: "User not found." });
-
-        res.json({
-            success: true,
-            data: {
-                username: user.username
-            }
-        });
-    } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Server error", details: error.message });
-    }
-};
-
 export const analyzeResume = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file uploaded." });

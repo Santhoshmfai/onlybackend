@@ -5,7 +5,6 @@ import path from "path";
 import {
     signup,
     login,
-    getUserDetails,
     analyzeResume,
     mockInterview,
     jobSuggestions,
@@ -40,7 +39,6 @@ const upload = multer({ storage });
 // Routes
 router.post("/signup", signup);  
 router.post("/login", login);  
-router.get('/user-details', verifyToken, getUserDetails); 
 router.post("/analyze", upload.single("resume"), analyzeResume);
 router.post("/mockinterview", verifyToken, mockInterview);
 router.post("/job-suggestions", verifyToken, jobSuggestions);
