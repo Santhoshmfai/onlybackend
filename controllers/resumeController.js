@@ -649,9 +649,6 @@ export const uploadProfilePicture = async (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        // Make sure you're importing your model correctly
-        const User = require('../models/resumeModel'); // or whatever your model path is
-        
         const user = await User.findById(req.user.id);
         if (!user) {
             // Delete the uploaded file if user not found
@@ -667,14 +664,16 @@ export const uploadProfilePicture = async (req, res) => {
             }
         }
 
-        // Save new profile picture path (relative to public folder)
-        const relativePath = `/uploads/profile-pictures/${req.file.filename}`;
-        user.profilePicture = relativePath;
+        // Save just the filename in the database
+        user.profilePicture = req.file.filename;
         await user.save();
 
+        // Return the full URL for the client
+        const fullUrl = `${req.protocol}://${req.get('host')}/uploads/profile-pictures/${req.file.filename}`;
+        
         res.json({
             message: 'Profile picture uploaded successfully',
-            profilePicture: `${req.protocol}://${req.get('host')}${relativePath}`
+            profilePicture: fullUrl
         });
     } catch (error) {
         console.error('Error uploading profile picture:', error);
@@ -682,6 +681,28 @@ export const uploadProfilePicture = async (req, res) => {
         if (req.file) {
             fs.unlinkSync(path.join(uploadDir, req.file.filename));
         }
+        res.status(500).json({ error: 'Server error' });
+    }
+};
+
+export const getProfilePicture = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user || !user.profilePicture) {
+            return res.status(404).json({ error: 'Profile picture not found' });
+        }
+
+        // Check if file exists
+        const imagePath = path.join(uploadDir, user.profilePicture);
+        if (!fs.existsSync(imagePath)) {
+            return res.status(404).json({ error: 'Profile picture file not found' });
+        }
+
+        // Return the full URL
+        const fullUrl = `${req.protocol}://${req.get('host')}/uploads/profile-pictures/${user.profilePicture}`;
+        res.json({ profilePicture: fullUrl });
+    } catch (error) {
+        console.error('Error getting profile picture:', error);
         res.status(500).json({ error: 'Server error' });
     }
 };

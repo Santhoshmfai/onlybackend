@@ -16,6 +16,7 @@ import {
     updateAccountInfo,
     updateBasicInfo,
     getBasicInfo,
+    getProfilePicture,
     uploadProfilePicture,
     health
 } from "../controllers/resumeController.js";
@@ -108,8 +109,11 @@ router.get("/dashboard", verifyToken, getDashboardData);
 router.get("/account-info", verifyToken, getAccountInfo);
 router.put("/update-account-info", verifyToken, updateAccountInfo);
 
-// Basic info routes
-router.post("/upload-profile-picture", verifyToken, uploadProfilePic.single('profilePicture'), uploadProfilePicture);
+// Add this new route for getting profile picture
+router.get("/profile-picture", verifyToken, getProfilePicture);
+
+// Update the upload route to be more consistent
+router.post("/profile-picture", verifyToken, uploadProfilePic.single('profilePicture'), uploadProfilePicture);
 router.put("/basic-info", verifyToken, updateBasicInfo);
 router.get("/basic-info", verifyToken, getBasicInfo);
 
