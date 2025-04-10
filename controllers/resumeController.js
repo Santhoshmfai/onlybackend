@@ -548,7 +548,41 @@ export const updateAccountInfo = async (req, res) => {
         res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
+export const getProfileImage = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) {
+            return res.status(401).json({ error: "Unauthorized: No token provided." });
+        }
 
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await Resume.findById(decoded.id).select("profilePicture");
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        if (!user.profilePicture) {
+            return res.status(404).json({ error: "Profile picture not found." });
+        }
+
+        // Extract the Base64 data from the data URI
+        const base64Data = user.profilePicture.replace(/^data:image\/\w+;base64,/, "");
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+
+        // Determine content type from the data URI
+        const matches = user.profilePicture.match(/^data:(image\/\w+);base64/);
+        const contentType = matches ? matches[1] : 'image/jpeg';
+
+        // Set headers and send the image
+        res.set('Content-Type', contentType);
+        res.send(imageBuffer);
+
+    } catch (error) {
+        console.error("Error fetching profile image:", error);
+        res.status(500).json({ error: "Internal server error", details: error.message });
+    }
+};
 export const uploadProfilePicture = async (req, res) => {
     try {
         if (!req.file) {

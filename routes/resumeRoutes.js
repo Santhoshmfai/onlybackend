@@ -17,6 +17,7 @@ import {
     updateBasicInfo,
     getBasicInfo,
     uploadProfilePicture,
+    getProfileImage,
     health
 } from "../controllers/resumeController.js";
 import { verifyToken } from "../middlewares/authMiddleware.js";
@@ -110,6 +111,7 @@ router.put("/update-account-info", verifyToken, updateAccountInfo);
 
 // Basic info routes
 router.post("/upload-profile-picture", verifyToken, uploadProfilePic.single('profilePicture'), uploadProfilePicture);
+router.get("/get-profile-picture", verifyToken, getProfileImage);
 router.put("/basic-info", verifyToken, updateBasicInfo);
 router.get("/basic-info", verifyToken, getBasicInfo);
 
