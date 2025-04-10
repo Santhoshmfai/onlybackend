@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import mongoose from "mongoose"; 
-
+import path from 'path'; 
 dotenv.config();
 const router = express.Router();
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -80,6 +80,46 @@ export const protectedRoute = (req, res) => {
     res.json({ message: "You have access to this protected route", user: req.user });
 };
 
+const callGroqAPI = async (payload, maxRetries = 3, retryDelay = 1000) => {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetch(GROQ_API_URL, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`API request failed with status ${response.status}: ${JSON.stringify(errorData)}`);
+            }
+
+            const data = await response.json();
+            
+            // Additional validation for expected response structure
+            if (!data.choices || !data.choices[0]?.message?.content) {
+                throw new Error("Invalid Groq API response format");
+            }
+
+            return data;
+        } catch (error) {
+            lastError = error;
+            console.warn(`Attempt ${attempt} failed: ${error.message}`);
+            
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+            }
+        }
+    }
+
+    throw lastError || new Error("Max retries reached without successful response");
+};
+
 export const storeScore = async (req, res) => {
     const { score } = req.body;
     const token = req.headers.authorization?.split(" ")[1];
@@ -127,80 +167,36 @@ export const analyzeResume = async (req, res) => {
         const parsedPdf = await pdfParse(pdfBuffer);
         const resumeText = parsedPdf.text.trim();
 
-        const response = await fetch(GROQ_API_URL, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "gemma2-9b-it",
-                messages: [
-                    { role: "system", content: "You analyze resumes and provide structured feedback. Each category (Content, Format, Sections, Skills, Style) should be scored out of 20, with suggestions for improvement." },
-                    { role: "user", content: `You are a resume analysis assistant. Analyze the given resume and respond strictly in the format below. Do not include any greetings, summaries, or extra commentary. Your response must follow this exact structure:
-
-Resume Analysis Score (as a percentage):
-
-Category-wise analysis:
-
-Content:
-Issues:
-
-[List the issues concisely]
-Suggested Fixes:
-
-[List clear suggestions]
-Score: [x]/20
-
-Format:
-Issues:
-
-[List the issues]
-Suggested Fixes:
-
-[List the fixes]
-Score: [x]/20
-
-Sections:
-Issues:
-
-[List the issues]
-Suggested Fixes:
-
-[List the fixes]
-Score: [x]/20
-
-Skills:
-Issues:
-
-[List the issues]
-Suggested Fixes:
-
-[List the fixes]
-Score: [x]/20
-
-Style:
-Issues:
-
-[List the issues]
-Suggested Fixes:
-
-[List the fixes]
-Score: [x]/20
-
-Only use bullet points. Do not skip any category. Do not use paragraph explanations. Maintain clarity, relevance, and a professional tone.
-
-Resume Text: ${resumeText}` }
-                    
-                ]
-            })
+        const data = await callGroqAPI({
+            model: "gemma2-9b-it",
+            messages: [
+                { role: "system", content: "You analyze resumes and provide structured feedback. Each category (Content, Format, Sections, Skills, Style) should be scored out of 20, with suggestions for improvement." },
+                { role: "user", content: `Analyze this resume and provide:
+                    1. Resume Analysis Score (as a percentage).
+                    2. Category-wise analysis:
+                        Content:
+                         Issues
+                         Suggested Fixes
+                         Score:[Score]/20
+                        Format:
+                         Issues
+                         Suggested Fixes
+                         Score:[Score]/20
+                        Sections:
+                         Issues
+                         Suggested Fixes
+                         Score:[Score]/20
+                        Skills:
+                         Issues
+                         Suggested Fixes
+                         Score:[Score]/20
+                        Style:
+                         Issues
+                         Suggested Fixes
+                         Score:[Score]/20
+                    Resume Text: ${resumeText}` }
+            ]
         });
-
-        const data = await response.json();
-        console.log(data)
-        if (!data.choices || !data.choices[0]?.message?.content) {
-            throw new Error("Invalid Groq API response format");
-        }
 
         const extractedText = data.choices[0].message.content;
         console.log(extractedText);
@@ -224,14 +220,13 @@ Resume Text: ${resumeText}` }
                 }
                 : { score: 0, issues: "No data found", suggestions: "No data found" };
         };
-        
 
         const content = extractCategoryData("Content");
         const format = extractCategoryData("Format");
         const sections = extractCategoryData("Sections");
         const skills = extractCategoryData("Skills");
         const style = extractCategoryData("Style");
-        console.log("san",content)
+        
         fs.unlinkSync(filePath);
 
         // Push new resume analysis data
@@ -260,43 +255,24 @@ export const jobSuggestions = async (req, res) => {
         const { resumeText } = req.body;
         if (!resumeText) return res.status(400).json({ error: "No resume text provided." });
 
-        // Call Groq API for job role suggestions
-        const response = await fetch(GROQ_API_URL, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "gemma2-9b-it",
-                messages: [
-                    { 
-                        role: "system", 
-                        content: "You analyze resumes and suggest the best job roles. Return ONLY job titles, one per line, with no additional text or formatting." 
-                    },
-                    { 
-                        role: "user", 
-                        content: `Based on the following resume text, suggest exactly one job titles (one per line, no numbers or bullet points):
-                        ${resumeText}`
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 100
-            })
+        const data = await callGroqAPI({
+            model: "gemma2-9b-it",
+            messages: [
+                { 
+                    role: "system", 
+                    content: "You analyze resumes and suggest the best job roles. Return ONLY job titles, one per line, with no additional text or formatting." 
+                },
+                { 
+                    role: "user", 
+                    content: `Based on the following resume text, suggest exactly one job titles (one per line, no numbers or bullet points):
+                    ${resumeText}`
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 100
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Groq API Error:", errorData);
-            return res.status(500).json({ error: "Groq API error", details: errorData });
-        }
-
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content;
-
-        if (!content) {
-            return res.status(500).json({ error: "Invalid Groq API response format" });
-        }
+        const content = data.choices[0].message.content;
 
         // More robust parsing of job titles
         const jobRoles = content.split('\n')
@@ -334,46 +310,16 @@ export const mockInterview = async (req, res) => {
             return res.status(400).json({ error: "Missing required fields: resumeText, jobRole, or difficulty." });
         }
 
-        const response = await fetch(GROQ_API_URL, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY?.trim()}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "gemma2-9b-it",
-                messages: [
-                    { role: "system", content: "You are a resume analysis assistant that generates mock interview questions and their correct answers based on the provided job role and resume. Your response must follow this exact format and structure—no extra commentary or explanation." },
-                    { role: "user", content: `Generate 15 interview questions for a ${jobRole} based on this resume. For each question, provide the correct answer. Ensure the response is strictly formatted as follows:
-
-Q1: [Question 1]
-A1: [Answer 1]
-Q2: [Question 2]
-A2: [Answer 2]
-...
-Q15: [Question 15]
-A15: [Answer 15]
-
-Resume Text: ${resumeText}` }
-                ]
-            })
+        const data = await callGroqAPI({
+            model: "gemma2-9b-it",
+            messages: [
+                { role: "system", content: "You generate mock interview questions and their correct answers based on job role and difficulty level. Ensure the response is strictly formatted as follows:\n\nQ1: [Question 1]\nA1: [Answer 1]\nQ2: [Question 2]\nA2: [Answer 2]\n...\nQ15: [Question 15]\nA15: [Answer 15]" },
+                { role: "user", content: `Generate 15 interview questions for a ${jobRole} based on this resume. For each question, provide the correct answer. 
+                Ensure the response is strictly formatted as follows:\n\nQ1: [Question 1]\nA1: [Answer 1]\nQ2: [Question 2]\nA2: [Answer 2]\n...\nQ15: [Question 15]\nA15: [Answer 15]\n\nResume Text: ${resumeText}`}
+            ]
         });
 
-        const responseBody = await response.text();
-        console.log("Groq API Raw Response:", responseBody);
-
-        if (!response.ok) {
-            console.error("API Error Response:", responseBody);
-            return res.status(response.status).json({ error: "Groq API error", details: responseBody });
-        }
-
-        const data = JSON.parse(responseBody);
-        const content = data.choices?.[0]?.message?.content;
-
-        if (!content) {
-            console.error("Invalid Groq API response format:", data);
-            return res.status(500).json({ error: "Invalid response format", details: data });
-        }
+        const content = data.choices[0].message.content;
 
         // Parse QA pairs more robustly
         const qaPairs = content.split("\n").filter(line => line.trim() !== "");
@@ -407,7 +353,7 @@ Resume Text: ${resumeText}` }
 
 export const evaluateAnswers = async (req, res) => {
     try {
-        console.log("Request Body:", req.body); // Log the request body
+        console.log("Request Body:", req.body);
 
         const { email, questions, answers, expectedAnswers, jobRole, skippedCount } = req.body;
 
@@ -417,66 +363,30 @@ export const evaluateAnswers = async (req, res) => {
             return res.status(400).json({ error: "Missing required fields." });
         }
 
-        // Log the data being sent to Groq API
-        console.log("Sending data to Groq API:", {
-            email,
-            questions,
-            answers,
-            expectedAnswers,
-            jobRole,
-            skippedCount
+        const data = await callGroqAPI({
+            model: "gemma2-9b-it",
+            messages: [
+                {
+                    role: "system",
+                    content: "You evaluate interview answers. Clearly label answers as 'Correct' or 'Wrong' and explain why.",
+                },
+                {
+                    role: "user",
+                    content: `Evaluate these answers. Clearly mention 'Correct' or 'Wrong' for each:\n\n${questions
+                        .map(
+                            (q, i) =>
+                                `Q: ${q}\nA: ${answers[i]}\nExpected: ${expectedAnswers[i]}`
+                        )
+                        .join("\n\n")}`,
+                }
+            ]                  
         });
 
-        // Call Groq API to evaluate answers
-        const response = await fetch(GROQ_API_URL, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "gemma2-9b-it",
-                messages: [
-                    {
-                        role: "system",
-                        content: `You evaluate interview answers. Clearly label answers as 'Correct' or 'Wrong' and explain why. Follow this format strictly:
-                    
-                    Q1: [Question 1]
-                    A1: [Candidate's Answer 1]
-                    Expected: [Expected Correct Answer 1]
-                    Evaluation: Correct/Wrong - [Short Explanation]
-                    
-                    ...up to Q15`
-                      },
-                      {
-                        role: "user",
-                        content: `Evaluate these answers. Clearly mention 'Correct' or 'Wrong' for each:\n\n${questions.map((q, i) => 
-                          `Q${i + 1}: ${q}\nA${i + 1}: ${answers[i]}\nExpected: ${expectedAnswers[i]}\n`
-                        ).join("\n")}`
-                      }
-                ]
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Groq API Error:", errorData);
-            return res.status(500).json({ error: "Groq API error", details: errorData });
-        }
-
-        const data = await response.json();
-        console.log("Groq API Response:", data); // Log the Groq API response
-
-        const content = data.choices?.[0]?.message?.content;
-
-        if (!content) {
-            console.error("Invalid response format from Groq API.");
-            return res.status(500).json({ error: "Invalid response format from Groq API" });
-        }
+        const content = data.choices[0].message.content;
 
         // Parse evaluations
         const evaluations = content.split("\n\n").map(line => line.trim()).filter(line => line !== "");
-        console.log("Evaluations:", evaluations); // Log the parsed evaluations
+        console.log("Evaluations:", evaluations);
 
         if (!evaluations || evaluations.length === 0) {
             console.error("No evaluations found in the response.");
@@ -486,7 +396,7 @@ export const evaluateAnswers = async (req, res) => {
         // Count correct and wrong answers
         let correctCount = evaluations.filter((evalText) => evalText.includes("Correct")).length;
         let wrongCount = evaluations.length - correctCount;
-        console.log("Correct Count:", correctCount, "Wrong Count:", wrongCount); // Log counts
+        console.log("Correct Count:", correctCount, "Wrong Count:", wrongCount);
 
         // Save results to the database
         const user = await Resume.findOne({ email });
@@ -509,12 +419,8 @@ export const evaluateAnswers = async (req, res) => {
             date: new Date()
         };
 
-        console.log("Mock Data to Save:", mockData); // Log the mock data
-
         user.mockInterviewData.push(mockData);
         await user.save();
-
-        console.log("Results saved successfully."); // Log success
 
         res.json({
             success: true,
@@ -524,7 +430,7 @@ export const evaluateAnswers = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error in evaluateAnswers:", error); // Log the error
+        console.error("Error in evaluateAnswers:", error);
         res.status(500).json({ error: "Server error", details: error.message });
     }
 };
@@ -649,60 +555,46 @@ export const uploadProfilePicture = async (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const user = await User.findById(req.user.id);
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            fs.unlinkSync(req.file.path);
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await Resume.findById(decoded.id);
+
         if (!user) {
-            // Delete the uploaded file if user not found
-            fs.unlinkSync(path.join(uploadDir, req.file.filename));
+            fs.unlinkSync(req.file.path);
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Delete old profile picture if exists
-        if (user.profilePicture) {
-            const oldImagePath = path.join(uploadDir, path.basename(user.profilePicture));
-            if (fs.existsSync(oldImagePath)) {
-                fs.unlinkSync(oldImagePath);
-            }
-        }
+        // Read the file and convert to Base64
+        const fileData = fs.readFileSync(req.file.path);
+        const base64Image = fileData.toString('base64');
 
-        // Save just the filename in the database
-        user.profilePicture = req.file.filename;
+        // Determine the MIME type
+        const mimeType = req.file.mimetype;
+
+        // Create data URI
+        const profilePicture = `data:${mimeType};base64,${base64Image}`;
+
+        // Update user with Base64 encoded image
+        user.profilePicture = profilePicture;
         await user.save();
 
-        // Return the full URL for the client
-        const fullUrl = `${req.protocol}://${req.get('host')}/uploads/profile-pictures/${req.file.filename}`;
-        
+        // Delete the temporary file
+        fs.unlinkSync(req.file.path);
+
         res.json({
             message: 'Profile picture uploaded successfully',
-            profilePicture: fullUrl
+            profilePicture: profilePicture
         });
     } catch (error) {
         console.error('Error uploading profile picture:', error);
-        // Delete the uploaded file if error occurs
         if (req.file) {
-            fs.unlinkSync(path.join(uploadDir, req.file.filename));
+            fs.unlinkSync(req.file.path);
         }
-        res.status(500).json({ error: 'Server error' });
-    }
-};
-
-export const getProfilePicture = async (req, res) => {
-    try {
-        const user = await User.findById(req.user.id);
-        if (!user || !user.profilePicture) {
-            return res.status(404).json({ error: 'Profile picture not found' });
-        }
-
-        // Check if file exists
-        const imagePath = path.join(uploadDir, user.profilePicture);
-        if (!fs.existsSync(imagePath)) {
-            return res.status(404).json({ error: 'Profile picture file not found' });
-        }
-
-        // Return the full URL
-        const fullUrl = `${req.protocol}://${req.get('host')}/uploads/profile-pictures/${user.profilePicture}`;
-        res.json({ profilePicture: fullUrl });
-    } catch (error) {
-        console.error('Error getting profile picture:', error);
         res.status(500).json({ error: 'Server error' });
     }
 };
@@ -717,7 +609,7 @@ export const updateBasicInfo = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
-        const { gender, location, birthday, summary, githubLink, linkedinLink } = req.body;
+        const { gender, location, birthday, summary, githubLink, linkedinLink, profilePicture } = req.body;
 
         if (gender !== undefined) user.gender = gender;
         if (location !== undefined) user.location = location;
@@ -725,6 +617,11 @@ export const updateBasicInfo = async (req, res) => {
         if (summary !== undefined) user.summary = summary;
         if (githubLink !== undefined) user.githubLink = githubLink;
         if (linkedinLink !== undefined) user.linkedinLink = linkedinLink;
+        
+        // Handle profile picture if it's included in the request
+        if (profilePicture !== undefined && profilePicture.startsWith('data:image')) {
+            user.profilePicture = profilePicture;
+        }
 
         await user.save();
 
@@ -761,7 +658,7 @@ export const getBasicInfo = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
-        // Format the birthday to ISO string if it exists
+        // Format the response
         const userResponse = {
             username: user.username || "",
             email: user.email || "",
@@ -772,13 +669,13 @@ export const getBasicInfo = async (req, res) => {
             summary: user.summary || "",
             githubLink: user.githubLink || "",
             linkedinLink: user.linkedinLink || "",
-            profilePicture: user.profilePicture || ""
+            profilePicture: user.profilePicture || "" // This will now be the Base64 string
         };
 
         res.status(200).json({ user: userResponse });
     } catch (error) {
         console.error("Error fetching basic info:", error);
-        res.status(500).json({ error: "Internal server error ", details: error.message });
+        res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
 export const health = async (req, res) => {
