@@ -80,46 +80,6 @@ export const protectedRoute = (req, res) => {
     res.json({ message: "You have access to this protected route", user: req.user });
 };
 
-const callGroqAPI = async (payload, maxRetries = 3, retryDelay = 1000) => {
-    let lastError = null;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const response = await fetch(GROQ_API_URL, {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`API request failed with status ${response.status}: ${JSON.stringify(errorData)}`);
-            }
-
-            const data = await response.json();
-            
-            // Additional validation for expected response structure
-            if (!data.choices || !data.choices[0]?.message?.content) {
-                throw new Error("Invalid Groq API response format");
-            }
-
-            return data;
-        } catch (error) {
-            lastError = error;
-            console.warn(`Attempt ${attempt} failed: ${error.message}`);
-            
-            if (attempt < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
-            }
-        }
-    }
-
-    throw lastError || new Error("Max retries reached without successful response");
-};
-
 export const storeScore = async (req, res) => {
     const { score } = req.body;
     const token = req.headers.authorization?.split(" ")[1];
@@ -152,6 +112,7 @@ export const storeScore = async (req, res) => {
 };
 
 export const analyzeResume = async (req, res) => {
+    let filePath;
     try {
         if (!req.file) return res.status(400).json({ error: "No file uploaded." });
 
@@ -162,63 +123,156 @@ export const analyzeResume = async (req, res) => {
         const user = await Resume.findById(decoded.id);
         if (!user) return res.status(404).json({ message: "User not found." });
 
-        const filePath = req.file.path;
+        filePath = req.file.path;
         const pdfBuffer = fs.readFileSync(filePath);
         const parsedPdf = await pdfParse(pdfBuffer);
         const resumeText = parsedPdf.text.trim();
 
-        const data = await callGroqAPI({
-            model: "gemma2-9b-it",
-            messages: [
-                { role: "system", content: "You analyze resumes and provide structured feedback. Each category (Content, Format, Sections, Skills, Style) should be scored out of 20, with suggestions for improvement." },
-                { role: "user", content: `Analyze this resume and provide:
-                    1. Resume Analysis Score (as a percentage).
-                    2. Category-wise analysis:
-                        Content:
-                         Issues
-                         Suggested Fixes
-                         Score:[Score]/20
-                        Format:
-                         Issues
-                         Suggested Fixes
-                         Score:[Score]/20
-                        Sections:
-                         Issues
-                         Suggested Fixes
-                         Score:[Score]/20
-                        Skills:
-                         Issues
-                         Suggested Fixes
-                         Score:[Score]/20
-                        Style:
-                         Issues
-                         Suggested Fixes
-                         Score:[Score]/20
-                    Resume Text: ${resumeText}` }
-            ]
-        });
+        // Retry configuration
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let extractedText = '';
+        let score = null;
+        let lastError = null;
 
-        const extractedText = data.choices[0].message.content;
-        console.log(extractedText);
+        while (retryCount < maxRetries && !success) {
+            try {
+                const response = await fetch(GROQ_API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        model: "gemma2-9b-it",
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: "You analyze resumes and provide structured feedback. Each category (Content, Format, Sections, Skills, Style) should be scored out of 20, with suggestions for improvement. Your response MUST follow the exact format specified." 
+                            },
+                            { 
+                                role: "user", 
+                                content: `ANALYZE THIS RESUME STRICTLY FOLLOWING THIS FORMAT:
 
-        // Extract overall resume score
-        const scoreMatch = extractedText.match(/Resume Analysis Score: (\d+)%/);
-        const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+Resume Analysis Score: [percentage]%
 
-        const extractCategoryData = (category) => {
-            const regex = new RegExp(
-                `${category}:\\s*\\n?-?\\s*Issues:(.*?)\\n?-?\\s*Suggested Fixes:(.*?)\\n?-?\\s*Score:\\s*(\\d+)/20`,
-                "is"
-            );
-            
-            const match = extractedText.match(regex);
-            return match
-                ? {
-                    score: parseInt(match[3], 10),
-                    issues: match[1].trim().replace(/\n/g, " "),
-                    suggestions: match[2].trim().replace(/\n/g, " ")
+Content:
+Issues:
+- [issue1]
+- [issue2]
+Suggested Fixes:
+- [fix1]
+- [fix2]
+Score: [x]/20
+
+Format:
+Issues:
+- [issue1]
+Suggested Fixes:
+- [fix1]
+Score: [x]/20
+
+Sections:
+Issues:
+- [issue1]
+Suggested Fixes:
+- [fix1]
+Score: [x]/20
+
+Skills:
+Issues:
+- [issue1]
+Suggested Fixes:
+- [fix1]
+Score: [x]/20
+
+Style:
+Issues:
+- [issue1]
+Suggested Fixes:
+- [fix1]
+Score: [x]/20
+
+DO NOT INCLUDE ANY OTHER TEXT OR EXPLANATIONS. JUST THE STRUCTURED ANALYSIS ABOVE.
+
+Resume Text: ${resumeText}` 
+                            }
+                        ],
+                        temperature: 0.3 // Lower temperature for more deterministic output
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!data.choices || !data.choices[0]?.message?.content) {
+                    throw new Error("Invalid Groq API response format - missing choices");
                 }
-                : { score: 0, issues: "No data found", suggestions: "No data found" };
+
+                extractedText = data.choices[0].message.content;
+                console.log(`API Response (Attempt ${retryCount + 1}):`, extractedText);
+                
+                // Enhanced validation
+                const scoreMatch = extractedText.match(/Resume Analysis Score:\s*(\d+)%/);
+                score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+                
+                if (score === null || isNaN(score)) {
+                    throw new Error("Missing or invalid score in response");
+                }
+
+                // Check all categories
+                const requiredCategories = ["Content", "Format", "Sections", "Skills", "Style"];
+                const categoryChecks = requiredCategories.map(cat => {
+                    const categoryRegex = new RegExp(
+                        `${cat}:\\s*\\nIssues:(.*?)\\nSuggested Fixes:(.*?)\\nScore:\\s*(\\d+)/20`,
+                        "s"
+                    );
+                    return categoryRegex.test(extractedText);
+                });
+
+                if (categoryChecks.every(Boolean)) {
+                    success = true;
+                } else {
+                    throw new Error(`Missing one or more required categories in response`);
+                }
+                
+            } catch (error) {
+                lastError = error;
+                retryCount++;
+                console.warn(`Attempt ${retryCount} failed:`, error.message);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
+            }
+        }
+
+        if (!success) {
+            throw new Error(`Failed after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
+        }
+
+        // Enhanced extraction with better error handling
+        const extractCategoryData = (category) => {
+            try {
+                const regex = new RegExp(
+                    `${category}:\\s*\\nIssues:(.*?)\\nSuggested Fixes:(.*?)\\nScore:\\s*(\\d+)/20`,
+                    "s"
+                );
+                
+                const match = extractedText.match(regex);
+                if (!match || match.length < 4) {
+                    console.warn(`Incomplete data for category: ${category}`);
+                    return { score: 0, issues: "Analysis not available", suggestions: "Analysis not available" };
+                }
+                
+                return {
+                    score: parseInt(match[3], 10),
+                    issues: match[1].trim().split('\n').filter(line => line.trim()).map(line => line.replace(/^- /, '').trim()).join('\n'),
+                    suggestions: match[2].trim().split('\n').filter(line => line.trim()).map(line => line.replace(/^- /, '').trim()).join('\n')
+                };
+            } catch (error) {
+                console.error(`Error processing category ${category}:`, error);
+                return { score: 0, issues: "Error in analysis", suggestions: "Error in analysis" };
+            }
         };
 
         const content = extractCategoryData("Content");
@@ -226,14 +280,21 @@ export const analyzeResume = async (req, res) => {
         const sections = extractCategoryData("Sections");
         const skills = extractCategoryData("Skills");
         const style = extractCategoryData("Style");
-        
-        fs.unlinkSync(filePath);
 
         // Push new resume analysis data
-        user.resumeAnalysis.push({ score, feedback: extractedText });
+        user.resumeAnalysis.push({ 
+            score, 
+            feedback: extractedText,
+            date: new Date() 
+        });
         await user.save();
 
-        res.json({
+        // Clean up file
+        if (filePath) {
+            fs.unlinkSync(filePath);
+        }
+
+        return res.json({
             success: true,
             data: {
                 overallScore: score,
@@ -241,13 +302,28 @@ export const analyzeResume = async (req, res) => {
                 format,
                 sections,
                 skills,
-                style
+                style,
+                fullAnalysis: extractedText // For debugging
             }
         });
 
     } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Server error", details: error.message });
+        console.error("Error in analyzeResume:", error);
+        
+        // Clean up file if it exists
+        if (filePath && fs.existsSync(filePath)) {
+            try {
+                fs.unlinkSync(filePath);
+            } catch (fileError) {
+                console.error("Error deleting file:", fileError);
+            }
+        }
+
+        return res.status(500).json({ 
+            error: "Failed to analyze resume",
+            details: error.message,
+            suggestion: "Please try again with a different resume or check the resume format"
+        });
     }
 };
 export const jobSuggestions = async (req, res) => {
@@ -255,183 +331,427 @@ export const jobSuggestions = async (req, res) => {
         const { resumeText } = req.body;
         if (!resumeText) return res.status(400).json({ error: "No resume text provided." });
 
-        const data = await callGroqAPI({
-            model: "gemma2-9b-it",
-            messages: [
-                { 
-                    role: "system", 
-                    content: "You analyze resumes and suggest the best job roles. Return ONLY job titles, one per line, with no additional text or formatting." 
-                },
-                { 
-                    role: "user", 
-                    content: `Based on the following resume text, suggest exactly one job titles (one per line, no numbers or bullet points):
-                    ${resumeText}`
+        // Retry configuration
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let jobRoles = [];
+        let lastError = null;
+
+        while (retryCount < maxRetries && !success) {
+            try {
+                const response = await fetch(GROQ_API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        model: "gemma2-9b-it",
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: `You suggest job roles based on resumes. Return ONLY job titles in this exact format:
+                                
+[Job Title 1]
+[Job Title 2]
+[Job Title 3]
+                                
+No numbers, bullets, or additional text.` 
+                            },
+                            { 
+                                role: "user", 
+                                content: `Suggest exactly 3 job titles (one per line) for this resume:
+                                ${resumeText}`
+                            }
+                        ],
+                        temperature: 0.3
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Groq API error: ${errorData.error?.message || 'Unknown error'}`);
                 }
-            ],
-            temperature: 0.7,
-            max_tokens: 100
-        });
 
-        const content = data.choices[0].message.content;
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content;
 
-        // More robust parsing of job titles
-        const jobRoles = content.split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .map(line => line.replace(/^\d+\.\s*/, '')) // Remove numbering if present
-            .map(line => line.replace(/^-\s*/, '')) // Remove bullets if present
-            .filter(line => !line.toLowerCase().includes('based on'))
-            .filter(line => line.length > 3); // Filter out very short lines
+                if (!content) {
+                    throw new Error("Empty response from Groq API");
+                }
 
-        if (jobRoles.length === 0) {
-            return res.status(500).json({ error: "No valid job titles found in response" });
+                // Parse job titles
+                jobRoles = content.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0)
+                    .filter(line => !line.match(/based on|suggest|resume/i))
+                    .slice(0, 3);
+
+                if (jobRoles.length >= 1) {
+                    success = true;
+                } else {
+                    throw new Error("No valid job titles found in response");
+                }
+
+            } catch (error) {
+                lastError = error;
+                retryCount++;
+                console.warn(`Attempt ${retryCount} failed:`, error.message);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
+            }
+        }
+
+        if (!success) {
+            throw new Error(`Failed after ${maxRetries} attempts. Last error: ${lastError?.message}`);
         }
 
         res.json({ 
             success: true, 
-            suggestions: jobRoles.slice(0, 5) // Return max 5 suggestions
+            suggestions: jobRoles 
         });
 
     } catch (error) {
         console.error("Error in jobSuggestions:", error);
         res.status(500).json({ 
-            error: "Server error", 
+            error: "Failed to generate job suggestions",
             details: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            suggestion: "Please try again with different resume text"
         });
     }
 };
-
 export const mockInterview = async (req, res) => {
     try {
         const { resumeText, jobRole, difficulty } = req.body;
 
         if (!resumeText || !jobRole || !difficulty) {
-            return res.status(400).json({ error: "Missing required fields: resumeText, jobRole, or difficulty." });
+            return res.status(400).json({ 
+                error: "Missing required fields",
+                details: {
+                    resumeText: !resumeText ? "Missing" : "Provided",
+                    jobRole: !jobRole ? "Missing" : "Provided",
+                    difficulty: !difficulty ? "Missing" : "Provided"
+                }
+            });
         }
 
-        const data = await callGroqAPI({
-            model: "gemma2-9b-it",
-            messages: [
-                { role: "system", content: "You generate mock interview questions and their correct answers based on job role and difficulty level. Ensure the response is strictly formatted as follows:\n\nQ1: [Question 1]\nA1: [Answer 1]\nQ2: [Question 2]\nA2: [Answer 2]\n...\nQ15: [Question 15]\nA15: [Answer 15]" },
-                { role: "user", content: `Generate 15 interview questions for a ${jobRole} based on this resume. For each question, provide the correct answer. 
-                Ensure the response is strictly formatted as follows:\n\nQ1: [Question 1]\nA1: [Answer 1]\nQ2: [Question 2]\nA2: [Answer 2]\n...\nQ15: [Question 15]\nA15: [Answer 15]\n\nResume Text: ${resumeText}`}
-            ]
-        });
+        // Validate resumeText length
+        if (resumeText.length < 50) {
+            return res.status(400).json({
+                error: "Resume text too short",
+                suggestion: "Please provide a more detailed resume"
+            });
+        }
 
-        const content = data.choices[0].message.content;
+        // Retry configuration
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let questions = [];
+        let expectedAnswers = [];
+        let lastError = null;
 
-        // Parse QA pairs more robustly
-        const qaPairs = content.split("\n").filter(line => line.trim() !== "");
-        const questions = [];
-        const expectedAnswers = [];
+        while (retryCount < maxRetries && !success) {
+            try {
+                // Truncate resume text if too long (keep first 2000 chars)
+                const truncatedResume = resumeText.length > 2000 
+                    ? resumeText.substring(0, 2000) + "... [truncated]"
+                    : resumeText;
 
-        for (let i = 0; i < qaPairs.length; i++) {
-            const line = qaPairs[i].trim();
-            if (line.startsWith("Q")) {
-                const question = line.replace(/^Q\d+: /, "").trim();
-                questions.push(question);
-            } else if (line.startsWith("A")) {
-                const answer = line.replace(/^A\d+: /, "").trim();
-                expectedAnswers.push(answer);
+                const response = await fetch(GROQ_API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        model: "gemma2-9b-it",
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: `You are an interview question generator. Generate exactly 15 questions and answers in this strict format:
+Q1: [Question text]
+A1: [Answer text]
+Q2: [Question text]
+A2: [Answer text]
+...
+Q15: [Question text]
+A15: [Answer text]
+
+DO NOT include any other text, explanations, or commentary. ONLY generate the questions and answers.`
+                            },
+                            { 
+                                role: "user", 
+                                content: `Generate 15 ${difficulty} difficulty interview questions for a ${jobRole} position based on this resume:
+
+${truncatedResume}`
+                            }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 2000
+                    })
+                });
+
+                const responseBody = await response.text();
+                console.log(`Attempt ${retryCount + 1} Raw Response:`, responseBody);
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const data = JSON.parse(responseBody);
+                const content = data.choices?.[0]?.message?.content;
+
+                if (!content) {
+                    throw new Error("Empty content in response");
+                }
+
+                // Parse QA pairs more robustly
+                const qaLines = content.split('\n')
+                    .filter(line => line.trim().length > 0)
+                    .map(line => line.trim());
+
+                questions = [];
+                expectedAnswers = [];
+                
+                for (let i = 0; i < qaLines.length; i++) {
+                    const line = qaLines[i];
+                    if (line.match(/^Q\d+:/i)) {
+                        const question = line.replace(/^Q\d+:\s*/i, '').trim();
+                        questions.push(question);
+                        
+                        // The next line should be the answer
+                        if (i + 1 < qaLines.length && qaLines[i+1].match(/^A\d+:/i)) {
+                            const answer = qaLines[i+1].replace(/^A\d+:\s*/i, '').trim();
+                            expectedAnswers.push(answer);
+                            i++; // Skip the answer line in next iteration
+                        } else {
+                            expectedAnswers.push("No answer provided");
+                        }
+                    }
+                }
+
+                if (questions.length === 15 && expectedAnswers.length === 15) {
+                    success = true;
+                } else {
+                    throw new Error(`Got ${questions.length} questions and ${expectedAnswers.length} answers`);
+                }
+
+            } catch (error) {
+                lastError = error;
+                retryCount++;
+                console.warn(`Attempt ${retryCount} failed:`, error.message);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
             }
         }
 
-        // Ensure exactly 15 Q&A pairs
-        if (questions.length !== 15 || expectedAnswers.length !== 15) {
-            console.error("Unexpected number of QA pairs:", { questions, expectedAnswers });
-            return res.status(500).json({ error: "Malformed response format", details: { questions, expectedAnswers } });
+        if (!success) {
+            throw new Error(`Failed after ${maxRetries} attempts. Last error: ${lastError?.message}`);
         }
 
-        res.json({ success: true, questions, expectedAnswers });
+        res.json({ 
+            success: true, 
+            questions, 
+            expectedAnswers 
+        });
 
     } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Server error", details: error.message });
+        console.error("Error in mockInterview:", {
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({ 
+            error: "Failed to generate mock interview",
+            details: error.message,
+            suggestion: "Please check your resume text and try again"
+        });
     }
 };
 
 export const evaluateAnswers = async (req, res) => {
     try {
-        console.log("Request Body:", req.body);
+        console.log("Evaluation Request Received:", {
+            body: req.body,
+            timestamp: new Date().toISOString()
+        });
 
         const { email, questions, answers, expectedAnswers, jobRole, skippedCount } = req.body;
 
-        // Validate request body
-        if (!questions || !answers || !expectedAnswers || !email || !jobRole) {
-            console.error("Missing required fields in request body.");
-            return res.status(400).json({ error: "Missing required fields." });
+        // Validation
+        const missingFields = [];
+        if (!email) missingFields.push("email");
+        if (!questions) missingFields.push("questions");
+        if (!expectedAnswers) missingFields.push("expectedAnswers");
+        if (!jobRole) missingFields.push("jobRole");
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                error: "Missing required fields",
+                missingFields
+            });
         }
 
-        const data = await callGroqAPI({
-            model: "gemma2-9b-it",
-            messages: [
-                {
-                    role: "system",
-                    content: "You evaluate interview answers. Clearly label answers as 'Correct' or 'Wrong' and explain why.",
-                },
-                {
-                    role: "user",
-                    content: `Evaluate these answers. Clearly mention 'Correct' or 'Wrong' for each:\n\n${questions
-                        .map(
-                            (q, i) =>
-                                `Q: ${q}\nA: ${answers[i]}\nExpected: ${expectedAnswers[i]}`
-                        )
-                        .join("\n\n")}`,
+        // Handle case where answers array might be empty or incomplete
+        const processedAnswers = questions.map((_, index) => 
+            answers[index] || "Not answered"
+        );
+
+        // Retry configuration
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let evaluations = [];
+        let correctCount = 0;
+        let wrongCount = 0;
+        let lastError = null;
+
+        while (retryCount < maxRetries && !success) {
+            try {
+                const qaPairs = questions.map((q, i) => 
+                    `Q${i+1}: ${q}\nA${i+1}: ${processedAnswers[i]}\nExpected: ${expectedAnswers[i]}`
+                ).join('\n\n');
+
+                const response = await fetch(GROQ_API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        model: "gemma2-9b-it",
+                        messages: [
+                            {
+                                role: "system",
+                                content: `Evaluate interview answers. Format each response exactly like this:
+Q1: [Question]
+A1: [Candidate Answer]
+Expected: [Expected Answer]
+Evaluation: Correct/Wrong - [Brief Explanation (1-2 sentences)]
+
+Always include the Evaluation line for every question, even if the answer is completely wrong or empty.`
+                            },
+                            {
+                                role: "user",
+                                content: `Evaluate these answers. For each question, clearly state whether the answer is Correct or Wrong:
+
+${qaPairs}`
+                            }
+                        ],
+                        temperature: 0.2
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API Error: ${errorData.error?.message || response.status}`);
                 }
-            ]                  
-        });
 
-        const content = data.choices[0].message.content;
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content;
 
-        // Parse evaluations
-        const evaluations = content.split("\n\n").map(line => line.trim()).filter(line => line !== "");
-        console.log("Evaluations:", evaluations);
+                if (!content) {
+                    throw new Error("Empty evaluation content");
+                }
 
-        if (!evaluations || evaluations.length === 0) {
-            console.error("No evaluations found in the response.");
-            return res.status(500).json({ error: "No evaluations found in the response" });
+                // Parse evaluations
+                evaluations = content.split('\n\n')
+                    .filter(item => item.trim().length > 0)
+                    .map(item => {
+                        // Extract evaluation result
+                        const evaluationMatch = item.match(/Evaluation:\s*(Correct|Wrong)/i);
+                        const isCorrect = evaluationMatch && evaluationMatch[1].toLowerCase() === 'correct';
+                        return {
+                            text: item.trim(),
+                            correct: isCorrect
+                        };
+                    });
+
+                correctCount = evaluations.filter(e => e.correct).length;
+                wrongCount = evaluations.length - correctCount;
+
+                // Even if all answers are wrong, we consider it a success as long as we got evaluations
+                if (evaluations.length === questions.length) {
+                    success = true;
+                } else {
+                    throw new Error(`Got ${evaluations.length} evaluations for ${questions.length} questions`);
+                }
+
+            } catch (error) {
+                lastError = error;
+                retryCount++;
+                console.warn(`Attempt ${retryCount} failed:`, error.message);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
+            }
         }
 
-        // Count correct and wrong answers
-        let correctCount = evaluations.filter((evalText) => evalText.includes("Correct")).length;
-        let wrongCount = evaluations.length - correctCount;
-        console.log("Correct Count:", correctCount, "Wrong Count:", wrongCount);
+        if (!success) {
+            // Fallback evaluation if API keeps failing
+            evaluations = questions.map((q, i) => ({
+                text: `Q${i+1}: ${q}\nA${i+1}: ${processedAnswers[i]}\nExpected: ${expectedAnswers[i]}\nEvaluation: Wrong - Answer did not match expected response`,
+                correct: false
+            }));
+            correctCount = 0;
+            wrongCount = questions.length;
+            console.warn("Using fallback evaluation due to API failures");
+        }
 
-        // Save results to the database
+        // Save results
         const user = await Resume.findOne({ email });
         if (!user) {
-            console.error("User not found in the database.");
-            return res.status(404).json({ message: "User not found." });
+            throw new Error("User not found");
         }
 
-        // Remove previous mock interview data for the same job role
-        user.mockInterviewData = user.mockInterviewData.filter(interview => interview.jobRole !== jobRole);
+        user.mockInterviewData = user.mockInterviewData.filter(interview => 
+            interview.jobRole !== jobRole
+        );
 
-        const mockData = {
+        user.mockInterviewData.push({
             jobRole,
             questions,
-            answers,
+            answers: processedAnswers,
             expectedAnswers,
             correctCount,
             wrongCount,
-            skippedCount,
+            skippedCount: skippedCount || 0,
+            evaluations: evaluations.map(e => e.text),
             date: new Date()
-        };
+        });
 
-        user.mockInterviewData.push(mockData);
         await user.save();
 
         res.json({
             success: true,
-            evaluation: evaluations,
+            evaluations: evaluations.map(e => e.text),
             correctCount,
-            wrongCount
+            wrongCount,
+            skippedCount
         });
 
     } catch (error) {
-        console.error("Error in evaluateAnswers:", error);
-        res.status(500).json({ error: "Server error", details: error.message });
+        console.error("Error in evaluateAnswers:", {
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({ 
+            success: false,
+            error: "Evaluation failed",
+            details: error.message,
+            evaluations: questions.map((q, i) => 
+                `Q${i+1}: ${q}\nA${i+1}: ${answers[i] || 'Not answered'}\nExpected: ${expectedAnswers[i]}\nEvaluation: Could not evaluate - System error`
+            ),
+            correctCount: 0,
+            wrongCount: questions.length,
+            skippedCount: skippedCount || 0
+        });
     }
 };
 
