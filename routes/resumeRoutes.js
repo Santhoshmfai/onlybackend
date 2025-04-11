@@ -17,6 +17,7 @@ import {
     updateBasicInfo,
     getBasicInfo,
     uploadProfilePicture,
+    deleteAccount,
     getProfileImage,
     health
 } from "../controllers/resumeController.js";
@@ -114,5 +115,6 @@ router.post("/upload-profile-picture", verifyToken, uploadProfilePic.single('pro
 router.get("/get-profile-picture", verifyToken, getProfileImage);
 router.put("/basic-info", verifyToken, updateBasicInfo);
 router.get("/basic-info", verifyToken, getBasicInfo);
+router.delete("/delete-account", verifyToken, deleteAccount);
 
 export default router;

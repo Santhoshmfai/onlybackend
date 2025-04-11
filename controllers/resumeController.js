@@ -1032,6 +1032,48 @@ export const getBasicInfo = async (req, res) => {
         res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
+export const deleteAccount = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+        if (!token) {
+            return res.status(401).json({ error: "Unauthorized: No token provided." });
+        }
+
+        // Verify token and get user ID
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
+        // Find and delete the user
+        const deletedUser = await Resume.findByIdAndDelete(decoded.id);
+        
+        if (!deletedUser) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        // Optional: Clean up any related data (like uploaded files, etc.)
+        // This would depend on your specific application requirements
+
+        res.status(200).json({ 
+            success: true,
+            message: "Account and all associated data deleted successfully." 
+        });
+
+    } catch (error) {
+        console.error("Error deleting account:", error);
+        
+        // Handle specific JWT errors
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ error: "Invalid token." });
+        }
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: "Token expired." });
+        }
+
+        res.status(500).json({ 
+            error: "Failed to delete account",
+            details: error.message 
+        });
+    }
+};
 export const health = async (req, res) => {
     res.json({
       message: "API is running",
