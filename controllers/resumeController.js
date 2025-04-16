@@ -799,48 +799,89 @@ export const getDashboardData = async (req, res) => {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        const user = await Resume.findById(decoded.id).select("mockInterviewData resumeAnalysis").lean();
+        // Get user with all resume analysis and mock interview data
+        const user = await Resume.findById(decoded.id)
+            .select("mockInterviewData resumeAnalysis")
+            .lean();
+        
         if (!user) {
             return res.status(404).json({ error: "User not found." });
         }
 
+        // Create a map to store dashboard data by job role
         const dashboardData = {};
 
-        // Process mock interview data
-        user.mockInterviewData.forEach(({ jobRole, correctCount }) => {
-            if (!dashboardData[jobRole]) {
-                dashboardData[jobRole] = {
-                    jobRole,
+        // Process mock interview data first
+        user.mockInterviewData.forEach(interview => {
+            if (!dashboardData[interview.jobRole]) {
+                dashboardData[interview.jobRole] = {
+                    jobRole: interview.jobRole,
                     correctAnswers: 0,
-                    resumeAnalysisScore: null // Default null to indicate missing data
+                    resumeAnalysisScores: [], // Now storing an array of scores
+                    interviewCount: 0
                 };
             }
-            dashboardData[jobRole].correctAnswers += correctCount;
+            dashboardData[interview.jobRole].correctAnswers += interview.correctCount;
+            dashboardData[interview.jobRole].interviewCount += 1;
         });
 
         // Process resume analysis data
-        user.resumeAnalysis.forEach(({ score }) => {
-            // Find the first available job role
-            const jobRole = user.mockInterviewData.length > 0 ? user.mockInterviewData[0].jobRole : "Unknown";
+        user.resumeAnalysis.forEach((analysis, index) => {
+            // Try to find a matching job role from mock interviews
+            // If no interviews yet, use a generic name
+            let jobRole = "Resume Analysis";
+            
+            // Try to find the most relevant job role
+            if (user.mockInterviewData.length > 0) {
+                // If we have multiple interviews, try to match by index
+                if (index < user.mockInterviewData.length) {
+                    jobRole = user.mockInterviewData[index].jobRole;
+                } else {
+                    // Use the most recent interview's job role
+                    jobRole = user.mockInterviewData[user.mockInterviewData.length - 1].jobRole;
+                }
+            }
 
             if (!dashboardData[jobRole]) {
                 dashboardData[jobRole] = {
                     jobRole,
                     correctAnswers: 0,
-                    resumeAnalysisScore: score || 0
+                    resumeAnalysisScores: [],
+                    interviewCount: 0
                 };
-            } else {
-                dashboardData[jobRole].resumeAnalysisScore = score || 0;
             }
+            
+            dashboardData[jobRole].resumeAnalysisScores.push(analysis.score);
         });
 
-        // Convert object to array format
-        const result = Object.values(dashboardData);
+        // Convert the dashboard data to array format and calculate averages
+        const result = Object.values(dashboardData).map(item => {
+            // Calculate average resume score for this job role
+            const avgResumeScore = item.resumeAnalysisScores.length > 0 
+                ? item.resumeAnalysisScores.reduce((a, b) => a + b, 0) / item.resumeAnalysisScores.length
+                : null;
 
-        res.json({ data: result });
+            return {
+                jobRole: item.jobRole,
+                correctAnswers: item.correctAnswers,
+                resumeAnalysisScore: avgResumeScore,
+                resumeAnalysisCount: item.resumeAnalysisScores.length,
+                interviewCount: item.interviewCount
+            };
+        });
+
+        res.json({ 
+            success: true,
+            data: result 
+        });
+
     } catch (error) {
         console.error("Error fetching dashboard data:", error);
-        res.status(500).json({ error: "Internal server error", details: error.message });
+        res.status(500).json({ 
+            success: false,
+            error: "Internal server error", 
+            details: error.message 
+        });
     }
 };
 
