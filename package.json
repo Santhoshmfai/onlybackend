@@ -13,6 +13,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "docxtract": "^1.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
@@ -27,6 +28,7 @@
     "pdf-parse": "^1.1.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "tesseract.js": "^6.0.1",
     "textract": "^2.5.0",
     "yamljs": "^0.3.0"
   }

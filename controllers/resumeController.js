@@ -1,6 +1,6 @@
 import express from "express";
 import Resume from "../models/Resume.js";
-import fs from "fs";
+import { promises as fs } from 'fs';
 import fetch from "node-fetch";
 import pdfParse from "pdf-parse";
 import dotenv from "dotenv";
@@ -8,7 +8,9 @@ import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import mongoose from "mongoose"; 
-import path from 'path'; 
+import * as mammoth from 'mammoth';
+
+
 dotenv.config();
 const router = express.Router();
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -124,9 +126,37 @@ export const analyzeResume = async (req, res) => {
         if (!user) return res.status(404).json({ message: "User not found." });
 
         filePath = req.file.path;
-        const pdfBuffer = fs.readFileSync(filePath);
-        const parsedPdf = await pdfParse(pdfBuffer);
-        const resumeText = parsedPdf.text.trim();
+        const fileExtension = req.file.originalname.split('.').pop().toLowerCase();
+        let resumeText = '';
+
+        // Process different file types
+        switch (fileExtension) {
+            case 'pdf':
+                const pdfBuffer = await fs.readFile(filePath);
+                const parsedPdf = await pdfParse(pdfBuffer);
+                resumeText = parsedPdf.text.trim();
+                break;
+
+            case 'docx':
+                const docxBuffer = await fs.readFile(filePath);
+                const result = await mammoth.extractRawText({ buffer: docxBuffer });
+                resumeText = result.value.trim();
+                break;
+
+            case 'txt':
+                resumeText = (await fs.readFile(filePath, 'utf-8')).trim();
+                break;
+
+            default:
+                return res.status(400).json({ 
+                    error: "Unsupported file type",
+                    supportedTypes: ["pdf", "docx", "jpg", "jpeg", "png", "txt"]
+                });
+        }
+
+        if (!resumeText) {
+            return res.status(400).json({ error: "Could not extract text from the file" });
+        }
 
         // Retry configuration
         const maxRetries = 3;
@@ -291,7 +321,11 @@ Resume Text: ${resumeText}`
 
         // Clean up file
         if (filePath) {
-            fs.unlinkSync(filePath);
+            try {
+                await fs.unlink(filePath);
+            } catch (fileError) {
+                console.error("Error deleting file:", fileError);
+            }
         }
 
         return res.json({
@@ -303,17 +337,17 @@ Resume Text: ${resumeText}`
                 sections,
                 skills,
                 style,
-                fullAnalysis: extractedText // For debugging
+                fullAnalysis: extractedText
             }
         });
 
     } catch (error) {
         console.error("Error in analyzeResume:", error);
         
-        // Clean up file if it exists
-        if (filePath && fs.existsSync(filePath)) {
+        // Clean up file if it exists - use async version
+        if (filePath) {
             try {
-                fs.unlinkSync(filePath);
+                await fs.unlink(filePath);
             } catch (fileError) {
                 console.error("Error deleting file:", fileError);
             }
