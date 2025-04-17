@@ -9,13 +9,9 @@ const ResumeSchema = new mongoose.Schema({
         default: "",
     },
     password: { type: String, required: true },
-    resumeAnalysis: [{
-        score: { type: Number, default: null },
-        feedback: { type: String, default: "" },
-        date: { type: Date, default: Date.now }
-    }],
     mockInterviewData: [{
-        jobRole: { type: String, required: true },
+        score: { type: Number, default: null },
+        jobRole: { type: String, default: 0 },
         questions: [{ type: String }],
         answers: [{ type: String }],
         expectedAnswers: [{ type: String }],
@@ -30,7 +26,7 @@ const ResumeSchema = new mongoose.Schema({
     summary: { type: String, default: "" },
     githubLink: { type: String, default: "" },
     linkedinLink: { type: String, default: "" },
-    profilePicture: { type: String, default: "" } // Added profile picture field
+    profilePicture: { type: String, default: "" }
 });
 
 export default mongoose.model("Resume", ResumeSchema);

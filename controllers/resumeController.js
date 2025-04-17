@@ -310,15 +310,6 @@ Resume Text: ${resumeText}`
         const sections = extractCategoryData("Sections");
         const skills = extractCategoryData("Skills");
         const style = extractCategoryData("Style");
-
-        // Push new resume analysis data
-        user.resumeAnalysis.push({ 
-            score, 
-            feedback: extractedText,
-            date: new Date() 
-        });
-        await user.save();
-
         // Clean up file
         if (filePath) {
             try {
@@ -615,8 +606,8 @@ export const evaluateAnswers = async (req, res) => {
             timestamp: new Date().toISOString()
         });
 
-        const { email, questions, answers, expectedAnswers, jobRole, skippedCount } = req.body;
-
+        const { email, questions, answers, expectedAnswers, jobRole, skippedCount,score } = req.body;
+        console.log("sa",email,score)
         // Validation
         const missingFields = [];
         if (!email) missingFields.push("email");
@@ -745,8 +736,11 @@ ${qaPairs}`
         user.mockInterviewData = user.mockInterviewData.filter(interview => 
             interview.jobRole !== jobRole
         );
-
+        const numericScore = Number(score) || 0;
+        user.score = numericScore;
+        console.log(numericScore)
         user.mockInterviewData.push({
+            score: numericScore,
             jobRole,
             questions,
             answers: processedAnswers,
@@ -789,7 +783,6 @@ ${qaPairs}`
     }
 };
 
-
 export const getDashboardData = async (req, res) => {
     try {
         const token = req.headers.authorization?.split(" ")[1];
@@ -799,92 +792,41 @@ export const getDashboardData = async (req, res) => {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Get user with all resume analysis and mock interview data
-        const user = await Resume.findById(decoded.id)
-            .select("mockInterviewData resumeAnalysis")
-            .lean();
-        
+        const user = await Resume.findById(decoded.id).select("mockInterviewData score").lean();
         if (!user) {
             return res.status(404).json({ error: "User not found." });
         }
 
-        // Create a map to store dashboard data by job role
+        // Process mock interview data by job role
         const dashboardData = {};
-
-        // Process mock interview data first
-        user.mockInterviewData.forEach(interview => {
-            if (!dashboardData[interview.jobRole]) {
-                dashboardData[interview.jobRole] = {
-                    jobRole: interview.jobRole,
-                    correctAnswers: 0,
-                    resumeAnalysisScores: [], // Now storing an array of scores
-                    interviewCount: 0
-                };
-            }
-            dashboardData[interview.jobRole].correctAnswers += interview.correctCount;
-            dashboardData[interview.jobRole].interviewCount += 1;
-        });
-
-        // Process resume analysis data
-        user.resumeAnalysis.forEach((analysis, index) => {
-            // Try to find a matching job role from mock interviews
-            // If no interviews yet, use a generic name
-            let jobRole = "Resume Analysis";
-            
-            // Try to find the most relevant job role
-            if (user.mockInterviewData.length > 0) {
-                // If we have multiple interviews, try to match by index
-                if (index < user.mockInterviewData.length) {
-                    jobRole = user.mockInterviewData[index].jobRole;
-                } else {
-                    // Use the most recent interview's job role
-                    jobRole = user.mockInterviewData[user.mockInterviewData.length - 1].jobRole;
-                }
-            }
-
+        user.mockInterviewData.forEach(({ jobRole, correctCount, score }) => {
             if (!dashboardData[jobRole]) {
                 dashboardData[jobRole] = {
                     jobRole,
                     correctAnswers: 0,
-                    resumeAnalysisScores: [],
-                    interviewCount: 0
+                    resumeAnalysisScore: score || 0, // Changed from 'score' to 'resumeAnalysisScore'
+                    interviewScore: 0 // Add interview score if needed
                 };
             }
-            
-            dashboardData[jobRole].resumeAnalysisScores.push(analysis.score);
+            dashboardData[jobRole].correctAnswers += correctCount;
+            // Keep the highest score if multiple entries exist
+            if (score && score > dashboardData[jobRole].resumeAnalysisScore) {
+                dashboardData[jobRole].resumeAnalysisScore = score;
+            }
         });
 
-        // Convert the dashboard data to array format and calculate averages
-        const result = Object.values(dashboardData).map(item => {
-            // Calculate average resume score for this job role
-            const avgResumeScore = item.resumeAnalysisScores.length > 0 
-                ? item.resumeAnalysisScores.reduce((a, b) => a + b, 0) / item.resumeAnalysisScores.length
-                : null;
+        // Also include the overall user score
+        const result = {
+            data: Object.values(dashboardData),
+            overallScore: user.score || 0
+        };
 
-            return {
-                jobRole: item.jobRole,
-                correctAnswers: item.correctAnswers,
-                resumeAnalysisScore: avgResumeScore,
-                resumeAnalysisCount: item.resumeAnalysisScores.length,
-                interviewCount: item.interviewCount
-            };
-        });
-
-        res.json({ 
-            success: true,
-            data: result 
-        });
-
+        res.json(result);
     } catch (error) {
         console.error("Error fetching dashboard data:", error);
-        res.status(500).json({ 
-            success: false,
-            error: "Internal server error", 
-            details: error.message 
-        });
+        res.status(500).json({ error: "Internal server error", details: error.message });
     }
 };
-
 // Fetch user account information
 export const getAccountInfo = async (req, res) => {
     try {
