@@ -641,35 +641,34 @@ export const evaluateAnswers = async (req, res) => {
                     `Q${i+1}: ${q}\nA${i+1}: ${processedAnswers[i]}\nExpected: ${expectedAnswers[i]}`
                 ).join('\n\n');
 
-                const response = await fetch(GROQ_API_URL, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        model: "gemma2-9b-it",
-                        messages: [
-                            {
-                                role: "system",
-                                content: `Evaluate interview answers. Format each response exactly like this:
-Q1: [Question]
-A1: [Candidate Answer]
-Expected: [Expected Answer]
-Evaluation: Correct/Wrong - [Brief Explanation (1-2 sentences)]
-
-Always include the Evaluation line for every question, even if the answer is completely wrong or empty.`
-                            },
-                            {
-                                role: "user",
-                                content: `Evaluate these answers. For each question, clearly state whether the answer is Correct or Wrong:
-
-${qaPairs}`
-                            }
-                        ],
-                        temperature: 0.2
-                    })
-                });
+               // In your evaluateAnswers route:
+const response = await fetch(GROQ_API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gemma2-9b-it",
+      messages: [
+        {
+          role: "system",
+          content: `You are an interview answer evaluator. Compare each candidate answer with the expected answer.
+          If the candidate answer contains the main points of the expected answer (even if phrased differently), respond with:
+          "Evaluation: Correct - [brief explanation]"
+          Otherwise respond with:
+          "Evaluation: Wrong - [brief explanation]"
+          Only include the evaluation line, nothing else.`
+        },
+        {
+          role: "user",
+          content: `Evaluate these answers:
+          ${qaPairs}`
+        }
+      ],
+      temperature: 0.2
+    })
+  });
 
                 if (!response.ok) {
                     const errorData = await response.json();
