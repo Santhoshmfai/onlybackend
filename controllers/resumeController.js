@@ -621,7 +621,6 @@ export const evaluateAnswers = async (req, res) => {
             });
         }
 
-        // Handle case where answers array might be empty or incomplete
         const processedAnswers = questions.map((_, index) => 
             answers[index] || "Not answered"
         );
@@ -641,34 +640,42 @@ export const evaluateAnswers = async (req, res) => {
                     `Q${i+1}: ${q}\nA${i+1}: ${processedAnswers[i]}\nExpected: ${expectedAnswers[i]}`
                 ).join('\n\n');
 
-               // In your evaluateAnswers route:
+                // Update the system prompt to be more lenient
 const response = await fetch(GROQ_API_URL, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
-      "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY.trim()}`,
+        "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gemma2-9b-it",
-      messages: [
-        {
-          role: "system",
-          content: `You are an interview answer evaluator. Compare each candidate answer with the expected answer.
-          If the candidate answer contains the main points of the expected answer (even if phrased differently), respond with:
-          "Evaluation: Correct - [brief explanation]"
-          Otherwise respond with:
-          "Evaluation: Wrong - [brief explanation]"
-          Only include the evaluation line, nothing else.`
-        },
-        {
-          role: "user",
-          content: `Evaluate these answers:
-          ${qaPairs}`
-        }
-      ],
-      temperature: 0.2
+        model: "gemma2-9b-it",
+        messages: [
+            {
+                role: "system",
+                content: `Evaluate interview answers leniently. Mark answers as Correct if they:
+            1. Contain the same key concepts as expected answer
+            2. Have similar meaning even if wording differs
+            3. Cover the main points of the expected answer
+            
+            Format responses like:
+            Q1: [Question]
+            A1: [Candidate Answer]
+            Expected: [Expected Answer]
+            Evaluation: Correct/Wrong - [Brief Explanation]
+            
+            Be generous in marking as Correct when the essence is right.`
+            },
+            {
+                role: "user",
+                content: `Evaluate these answers leniently, focusing on meaning rather than exact wording:
+
+${qaPairs}`
+            }
+        ],
+        temperature: 0.3  // Slightly higher temperature for more flexible evaluation
     })
-  });
+});
+
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -682,28 +689,29 @@ const response = await fetch(GROQ_API_URL, {
                     throw new Error("Empty evaluation content");
                 }
 
-                // Parse evaluations
-                evaluations = content.split('\n\n')
-                    .filter(item => item.trim().length > 0)
-                    .map(item => {
-                        // Extract evaluation result
-                        const evaluationMatch = item.match(/Evaluation:\s*(Correct|Wrong)/i);
-                        const isCorrect = evaluationMatch && evaluationMatch[1].toLowerCase() === 'correct';
-                        return {
-                            text: item.trim(),
-                            correct: isCorrect
-                        };
-                    });
-
-                correctCount = evaluations.filter(e => e.correct).length;
-                wrongCount = evaluations.length - correctCount;
-
+               // Update the evaluation parsing to be more flexible
+               evaluations = content.split('\n\n')
+               .filter(item => item.trim().length > 0)
+               .map(item => {
+                   // More comprehensive correctness checking
+                   const isCorrect = /(correct|mostly right|close enough|similar meaning|partially correct|contains key points|right answer)/i.test(item) &&
+                                   !/(wrong|incorrect|missing key|not correct|does not match)/i.test(item);
+                   
+                   return {
+                       text: item.trim(),
+                       correct: isCorrect
+                   };
+               });
+           
+           // More accurate counting
+           correctCount = evaluations.filter(e => e.correct).length;
+           wrongCount = questions.length - correctCount - (skippedCount || 0);
+           
+           // Fixing the issue where only one correct answer was counted
+           console.log("Correct Count:", correctCount);
+           console.log("Wrong Count:", wrongCount);
                 // Even if all answers are wrong, we consider it a success as long as we got evaluations
-                if (evaluations.length === questions.length) {
-                    success = true;
-                } else {
-                    throw new Error(`Got ${evaluations.length} evaluations for ${questions.length} questions`);
-                }
+
 
             } catch (error) {
                 lastError = error;
@@ -714,18 +722,6 @@ const response = await fetch(GROQ_API_URL, {
                 }
             }
         }
-
-        if (!success) {
-            // Fallback evaluation if API keeps failing
-            evaluations = questions.map((q, i) => ({
-                text: `Q${i+1}: ${q}\nA${i+1}: ${processedAnswers[i]}\nExpected: ${expectedAnswers[i]}\nEvaluation: Wrong - Answer did not match expected response`,
-                correct: false
-            }));
-            correctCount = 0;
-            wrongCount = questions.length;
-            console.warn("Using fallback evaluation due to API failures");
-        }
-
         // Save results
         const user = await Resume.findOne({ email });
         if (!user) {
@@ -738,6 +734,7 @@ const response = await fetch(GROQ_API_URL, {
         const numericScore = Number(score) || 0;
         user.score = numericScore;
         console.log(numericScore)
+        console.log("correct",correctCount)
         user.mockInterviewData.push({
             score: numericScore,
             jobRole,
