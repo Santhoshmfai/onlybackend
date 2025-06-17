@@ -247,11 +247,11 @@ Resume Text: ${resumeText}`
                 });
 
                 const data = await response.json();
-                
+                console.log(data)
                 if (!data.choices || !data.choices[0]?.message?.content) {
                     throw new Error("Invalid Groq API response format - missing choices");
                 }
-
+                
                 extractedText = data.choices[0].message.content;
                 console.log(`API Response (Attempt ${retryCount + 1}):`, extractedText);
                 
