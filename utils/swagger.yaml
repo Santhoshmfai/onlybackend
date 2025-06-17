@@ -1,0 +1,705 @@
+openapi: 3.0.0
+info:
+  title: Resume Analyzer API
+  description: API for resume analysis, mock interviews, and job suggestions
+  version: 1.0.0
+servers:
+  - url: https://airesumeproapi.onrender.com/api
+    description: Production server
+  - url: http://localhost:5000/api
+    description: Local development server
+tags:
+  - name: Authentication
+    description: User authentication endpoints
+  - name: Resume Analysis
+    description: Resume processing and analysis
+  - name: Mock Interviews
+    description: Interview question generation and evaluation
+  - name: Account Management
+    description: User account operations
+  - name: Profile
+    description: User profile management
+  - name: Health
+    description: Service health check
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    AuthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+        email:
+          type: string
+    ResumeAnalysisRequest:
+      type: object
+      required:
+        - resume
+      properties:
+        resume:
+          type: string
+          format: binary
+    JobSuggestionRequest:
+      type: object
+      required:
+        - resumeText
+      properties:
+        resumeText:
+          type: string
+    MockInterviewRequest:
+      type: object
+      required:
+        - resumeText
+        - jobRole
+        - difficulty
+      properties:
+        resumeText:
+          type: string
+        jobRole:
+          type: string
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+    EvaluationRequest:
+      type: object
+      required:
+        - email
+        - questions
+        - answers
+        - expectedAnswers
+        - jobRole
+      properties:
+        email:
+          type: string
+          format: email
+        questions:
+          type: array
+          items:
+            type: string
+        answers:
+          type: array
+          items:
+            type: string
+        expectedAnswers:
+          type: array
+          items:
+            type: string
+        jobRole:
+          type: string
+        score:
+          type: number
+    ScoreRequest:
+      type: object
+      required:
+        - score
+      properties:
+        score:
+          type: number
+    ProfilePictureUpload:
+      type: object
+      properties:
+        profilePicture:
+          type: string
+          format: binary
+    BasicInfo:
+      type: object
+      properties:
+        gender:
+          type: string
+        location:
+          type: string
+        birthday:
+          type: string
+          format: date
+        summary:
+          type: string
+        githubLink:
+          type: string
+          format: uri
+        linkedinLink:
+          type: string
+          format: uri
+        profilePicture:
+          type: string
+
+paths:
+  /signup:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        201:
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        400:
+          description: Bad request (missing fields or user exists)
+        500:
+          description: Internal server error
+
+  /login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        400:
+          description: Invalid credentials
+        500:
+          description: Server error
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Check API health status
+      responses:
+        200:
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  dbStatus:
+                    type: string
+
+  /analyze:
+    post:
+      tags: [Resume Analysis]
+      summary: Analyze a resume file
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resume:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: Resume analysis successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      overallScore:
+                        type: number
+                      content:
+                        type: object
+                        properties:
+                          score:
+                            type: number
+                          issues:
+                            type: string
+                          suggestions:
+                            type: string
+                      format:
+                        type: object
+                        properties:
+                          score:
+                            type: number
+                          issues:
+                            type: string
+                          suggestions:
+                            type: string
+                      sections:
+                        type: object
+                        properties:
+                          score:
+                            type: number
+                          issues:
+                            type: string
+                          suggestions:
+                            type: string
+                      skills:
+                        type: object
+                        properties:
+                          score:
+                            type: number
+                          issues:
+                            type: string
+                          suggestions:
+                            type: string
+                      style:
+                        type: object
+                        properties:
+                          score:
+                            type: number
+                          issues:
+                            type: string
+                          suggestions:
+                            type: string
+                      fullAnalysis:
+                        type: string
+        400:
+          description: Bad request (no file or invalid file type)
+        401:
+          description: Unauthorized
+        500:
+          description: Failed to analyze resume
+
+  /job-suggestions:
+    post:
+      tags: [Resume Analysis]
+      summary: Get job suggestions based on resume
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobSuggestionRequest'
+      responses:
+        200:
+          description: Job suggestions generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  suggestions:
+                    type: array
+                    items:
+                      type: string
+        400:
+          description: Bad request (no resume text)
+        500:
+          description: Failed to generate suggestions
+
+  /mockinterview:
+    post:
+      tags: [Mock Interviews]
+      summary: Generate mock interview questions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MockInterviewRequest'
+      responses:
+        200:
+          description: Interview questions generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  questions:
+                    type: array
+                    items:
+                      type: string
+                  expectedAnswers:
+                    type: array
+                    items:
+                      type: string
+        400:
+          description: Bad request (missing fields)
+        500:
+          description: Failed to generate questions
+
+  /evaluate-answers:
+    post:
+      tags: [Mock Interviews]
+      summary: Evaluate interview answers
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationRequest'
+      responses:
+        200:
+          description: Answers evaluated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  evaluations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        question:
+                          type: string
+                        answer:
+                          type: string
+                        expected:
+                          type: string
+                        evaluation:
+                          type: string
+                        isCorrect:
+                          type: boolean
+                  correctCount:
+                    type: number
+                  wrongCount:
+                    type: number
+        400:
+          description: Bad request (missing fields)
+        500:
+          description: Evaluation failed
+
+  /store-score:
+    post:
+      tags: [Resume Analysis]
+      summary: Store user's resume score
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreRequest'
+      responses:
+        200:
+          description: Score stored successfully
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Error storing score
+
+  /dashboard:
+    get:
+      tags: [Account Management]
+      summary: Get user dashboard data
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Dashboard data retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        jobRole:
+                          type: string
+                        correctAnswers:
+                          type: number
+                        resumeAnalysisScore:
+                          type: number
+                        interviewScore:
+                          type: number
+                  overallScore:
+                    type: number
+        401:
+          description: Unauthorized
+        500:
+          description: Internal server error
+
+  /account-info:
+    get:
+      tags: [Account Management]
+      summary: Get user account information
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Account info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                      email:
+                        type: string
+                      phoneNumber:
+                        type: string
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Internal server error
+
+    put:
+      tags: [Account Management]
+      summary: Update user account information
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phoneNumber:
+                  type: string
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        200:
+          description: Account updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
+        500:
+          description: Internal server error
+
+  /upload-profile-picture:
+    post:
+      tags: [Profile]
+      summary: Upload profile picture
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfilePictureUpload'
+      responses:
+        200:
+          description: Profile picture uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  profilePicture:
+                    type: string
+        400:
+          description: No file uploaded
+        401:
+          description: Unauthorized
+        500:
+          description: Server error
+
+  /get-profile-picture:
+    get:
+      tags: [Profile]
+      summary: Get profile picture
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Profile picture retrieved
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        401:
+          description: Unauthorized
+        404:
+          description: Picture not found
+        500:
+          description: Internal server error
+
+  /basic-info:
+    get:
+      tags: [Profile]
+      summary: Get basic user info
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Basic info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                      email:
+                        type: string
+                      phoneNumber:
+                        type: string
+                      gender:
+                        type: string
+                      location:
+                        type: string
+                      birthday:
+                        type: string
+                      summary:
+                        type: string
+                      githubLink:
+                        type: string
+                      linkedinLink:
+                        type: string
+                      profilePicture:
+                        type: string
+        401:
+          description: Unauthorized
+        500:
+          description: Internal server error
+
+    put:
+      tags: [Profile]
+      summary: Update basic user info
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BasicInfo'
+      responses:
+        200:
+          description: Basic info updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
+        500:
+          description: Internal server error
+
+  /delete-account:
+    delete:
+      tags: [Account Management]
+      summary: Delete user account
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        401:
+          description: Unauthorized
+        404:
+          description: User not found
+        500:
+          description: Failed to delete account
+
+  /protected:
+    get:
+      tags: [Authentication]
+      summary: Test protected route
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Protected route accessed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Unauthorized
