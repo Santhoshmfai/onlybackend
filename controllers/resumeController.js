@@ -6,7 +6,7 @@ import pdfParse from "pdf-parse";
 import dotenv from "dotenv";
 import bcrypt from 'bcryptjs';
 import jwt from "jsonwebtoken";
-import cors from "cors";
+
 import mongoose from "mongoose"; 
 import * as mammoth from 'mammoth';
 
@@ -19,7 +19,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // Middleware
 router.use(express.json());
-router.use(cors({ origin: "*", credentials: true }));
 
 export const signup = async (req, res) => {
     try {
