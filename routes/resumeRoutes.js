@@ -151,7 +151,7 @@ router.get("/auth/google/callback",
             // res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'strict' });
             // res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
         } catch (error) {
-            console.error("Google callback error:", error);
+            console.error("Google callback error :", error);
             res.redirect(`${process.env.FRONTEND_URL}/login?error=authentication_failed`);
         }
     }
